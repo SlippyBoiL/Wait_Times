@@ -5,6 +5,17 @@ import requests
 import os
 import random
 from apscheduler.schedulers.background import BackgroundScheduler
+import subprocess
+
+def get_git_version():
+    try:
+        # Grabs the short version of the latest commit hash
+        return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('ascii').strip()
+    except:
+        return "Unknown Version"
+
+# Log the version immediately when the script starts
+print(f"--- DASHBOARD STARTING: Version {get_git_version()} ---")
 
 app = Flask(__name__)
 
