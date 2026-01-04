@@ -183,7 +183,7 @@ if __name__ == '__main__':
         db.create_all()
     try:
         # Debug is True for your PC, but False for the Pi
-        app.run(host='0.0.0.0', port=5001, debug=True)
+        app.run(host='0.0.0.0', port=5001, debug=False)
     except (KeyboardInterrupt, SystemExit):
         scheduler.shutdown()
     
@@ -324,4 +324,4 @@ MAIN_TEMPLATE = """
 </html>
 """
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=False)
