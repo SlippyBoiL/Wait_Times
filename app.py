@@ -4,8 +4,20 @@ from datetime import datetime, timedelta
 import requests
 import os
 import random
+import subprocess
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
+
+# --- GIT VERSION TRACKER ---
+def get_git_version():
+    try:
+        # Grabs the short version of the latest commit hash
+        return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('ascii').strip()
+    except:
+        return "Local-Dev"
+
+print(f"--- DASHBOARD STARTING: Version {get_git_version()} ---")
 
 # --- DATABASE SETUP ---
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -21,8 +33,21 @@ class WaitHistory(db.Model):
     status = db.Column(db.String(20))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
-with app.app_context():
-    db.create_all()
+# --- 24-HOUR MAINTENANCE TASK ---
+def daily_maintenance():
+    """Runs every 24 hours to keep the database small and healthy"""
+    print(f"[{datetime.now()}] Running 24-hour Database Maintenance...")
+    with app.app_context():
+        # Deletes logs older than 48 hours to save Pi SD card space
+        cutoff = datetime.utcnow() - timedelta(hours=48)
+        WaitHistory.query.filter(WaitHistory.timestamp < cutoff).delete()
+        db.session.commit()
+    print("Cleanup Complete.")
+
+# Start the scheduler before the app runs
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=daily_maintenance, trigger="interval", hours=24)
+scheduler.start()
 
 # --- CONFIGURATION ---
 PARKS = {
@@ -39,25 +64,19 @@ park_hours = {
     "Islands of Adventure": "8:00 AM - 10:00 PM"
 }
 
-# --- GEMINI SUGGESTION ENGINE (Logic I've Written For You) ---
+# --- GEMINI SUGGESTION ENGINE ---
 def generate_ai_advice(playlist):
-    """
-    This is where I analyze the live data to give you active suggestions.
-    """
     tips = []
     open_rides = [r for r in playlist if r['status'] == "OPEN"]
     
     if not open_rides:
-        return ["It looks like the parks are currently closed or updating. Use this time to plan your next Disney Genie+ selection!"]
+        return ["It looks like the parks are currently closed or updating. Plan your next selection!"]
 
-    # 1. Finding the "Best Value" (Lowest wait for a big attraction)
-    # We look for rides with "Mountain", "Flight", "Velocity", or "Coaster" in the name
     big_hits = ["Mine Train", "Space Mountain", "Slinky Dog", "VelociCoaster", "Hagrid", "Avatar"]
     for ride in open_rides:
         if any(hit in ride['name'] for hit in big_hits) and ride['wait'] <= 45:
-            tips.append(f"✨ PRO-TIP: {ride['name']} is currently at a rare low of {ride['wait']} mins! Head there now.")
+            tips.append(f"✨ PRO-TIP: {ride['name']} is at a rare low of {ride['wait']} mins!")
 
-    # 2. Park Hopper Recommendation
     park_averages = {}
     for p in PARKS.keys():
         p_rides = [r['wait'] for r in open_rides if r['park'] == p]
@@ -66,13 +85,18 @@ def generate_ai_advice(playlist):
     
     if park_averages:
         best_park = min(park_averages, key=park_averages.get)
-        tips.append(f"🚀 PARK HOPPER ALERT: {best_park} has the lowest overall wait times right now.")
+        tips.append(f"🚀 PARK HOPPER ALERT: {best_park} has the lowest overall waits.")
 
-    # 3. Crowd Escape
-    if len([r for r in open_rides if r['wait'] >= 100]) >= 3:
-        tips.append("📢 CROWD WARNING: Major lines are hitting 100+ mins. This is a great time to check out a show or grab a DOLE Whip!")
+    return tips[:2]
 
-    return tips[:2] # Return the top 2 smartest tips
+# --- ROUTES ---
+
+@app.route('/api/history/<path:ride_name>')
+def get_ride_history(ride_name):
+    cutoff = datetime.utcnow() - timedelta(hours=24)
+    history = WaitHistory.query.filter(WaitHistory.ride_name == ride_name, WaitHistory.timestamp > cutoff).order_by(WaitHistory.timestamp.asc()).all()
+    data = [{"time": h.timestamp.strftime("%H:%M"), "wait": h.wait_time} for h in history]
+    return jsonify(data)
 
 @app.route('/')
 def index():
@@ -101,9 +125,7 @@ def index():
             db.session.commit()
         except: pass
 
-    # Use my AI Logic to generate tips
     ai_suggestions = generate_ai_advice(playlist)
-    
     top_5 = sorted([r for r in playlist if r['status'] == "OPEN"], key=lambda x: x['wait'], reverse=True)[:5]
     random.shuffle(playlist)
     
@@ -123,8 +145,6 @@ MAIN_TEMPLATE = """
         .top-waits-bar { background: rgba(0,0,0,0.5); display: flex; justify-content: space-around; padding: 8px; border-bottom: 2px solid var(--disney-gold); font-size: 0.8rem; }
         .main { display: flex; flex: 1; overflow: hidden; }
         .sidebar { width: 320px; background: rgba(0, 40, 120, 0.95); border-right: 4px solid var(--disney-gold); padding: 20px; display: flex; flex-direction: column; }
-        
-        /* New Suggestion Tab */
         .suggestion-tab { 
             background: linear-gradient(135deg, #2c3e50, #003399); 
             border: 2px solid var(--gemini-purple); 
@@ -133,7 +153,6 @@ MAIN_TEMPLATE = """
         }
         .ai-title { color: #d499ff; font-weight: bold; font-size: 0.9rem; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
         .tip-text { font-size: 0.85rem; line-height: 1.4; margin-bottom: 10px; }
-
         .sidebar-box { border: 2px solid var(--disney-gold); padding: 10px; border-radius: 5px; text-align: center; background: rgba(0,0,0,0.2); margin-bottom: 15px; }
         .content { flex: 1; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle, #0044bb 0%, #001133 100%); position: relative; }
         .ride-spotlight { width: 85%; max-width: 600px; padding: 40px; border-radius: 40px; background: rgba(255, 255, 255, 0.1); border: 5px solid var(--disney-gold); text-align: center; display: none; box-shadow: 0 0 60px rgba(0,0,0,0.6); backdrop-filter: blur(10px); }
@@ -150,11 +169,8 @@ MAIN_TEMPLATE = """
         <div class="sidebar">
             <div class="suggestion-tab">
                 <div class="ai-title">✨ GEMINI LIVE GUIDE</div>
-                {% for tip in ai_tips %}
-                    <div class="tip-text">{{ tip }}</div>
-                {% endfor %}
+                {% for tip in ai_tips %}<div class="tip-text">{{ tip }}</div>{% endfor %}
             </div>
-
             <div class="sidebar-box">
                 <input type="text" id="searchBar" placeholder="Search Playlist..." onkeyup="searchRides()" style="width:90%; padding:8px; border-radius:5px; border:2px solid var(--disney-gold); background:#001133; color:white;">
                 <ul id="resultsList" style="list-style:none; padding:0; max-height:100px; overflow-y:auto; font-size:0.8rem; text-align:left;"></ul>
@@ -222,4 +238,9 @@ MAIN_TEMPLATE = """
 """
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001,debug=True)
+    with app.app_context():
+        db.create_all()
+    try:
+        app.run(host='0.0.0.0', port=5001, debug=False) # Turned Debug OFF for a smoother Pi performance
+    except (KeyboardInterrupt, SystemExit):
+        scheduler.shutdown()
