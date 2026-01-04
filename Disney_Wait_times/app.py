@@ -4,19 +4,17 @@ from datetime import datetime, timedelta
 import requests
 import os
 import random
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
 
-# --- PI-SPECIFIC PATH FIX ---
-# This ensures the database is created in the same folder as this script
+# --- DATABASE SETUP ---
+# Works on both PC and Pi because it uses the relative path
 basedir = os.path.abspath(os.path.dirname(__file__))
-db_path = os.path.join(basedir, 'waits.db')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + db_path
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'waits.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 db = SQLAlchemy(app)
 
-# Database Model
 class WaitHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ride_name = db.Column(db.String(100))
@@ -25,18 +23,12 @@ class WaitHistory(db.Model):
     status = db.Column(db.String(20))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
-# Ensure tables are created on start
-with app.app_context():
-    db.create_all()
-
-# --- CONFIGURATION (2026 Ready) ---
+# --- 2026 CONFIGURATION ---
 PARKS = {
     "Magic Kingdom": 6, "EPCOT": 5, "Hollywood Studios": 7, "Animal Kingdom": 8,
-    "Universal Studios Florida": 65, "Islands of Adventure": 64,
-    "Epic Universe": 334
+    "Universal Studios Florida": 65, "Islands of Adventure": 64, "Epic Universe": 334
 }
 
-# Permanently closed rides filter
 BLACKLIST = [
     "Hollywood Rip Ride Rockit", "Dinosaur", "Poseidon's Fury", 
     "Shrek 4-D", "Fear Factor Live", "Star Wars Launch Bay",
@@ -53,7 +45,22 @@ park_hours = {
     "Epic Universe": "9:00 AM - 10:00 PM"
 }
 
-# --- GEMINI SUGGESTION ENGINE ---
+# --- 24-HOUR MAINTENANCE TASK ---
+def daily_maintenance():
+    """Triggered every 24 hours to clean the database and log status"""
+    print(f"[{datetime.now()}] Starting 24-Hour Maintenance...")
+    with app.app_context():
+        # Keep only the last 48 hours of history to save SD card space
+        cutoff = datetime.utcnow() - timedelta(hours=48)
+        WaitHistory.query.filter(WaitHistory.timestamp < cutoff).delete()
+        db.session.commit()
+    print("Maintenance Complete: Old logs purged.")
+
+# Start the background scheduler
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=daily_maintenance, trigger="interval", hours=24)
+scheduler.start()
+
 def generate_ai_advice(playlist):
     tips = []
     open_rides = [r for r in playlist if r['status'] == "OPEN"]
@@ -123,6 +130,51 @@ def index():
 def history_log():
     cutoff = datetime.utcnow() - timedelta(hours=12)
     logs = WaitHistory.query.filter(WaitHistory.timestamp > cutoff).order_by(WaitHistory.timestamp.desc()).limit(200).all()
+    
+    history_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Resort TV - History Log</title>
+        <style>
+            body { background: #003399; color: white; font-family: sans-serif; padding: 20px; }
+            table { width: 100%; border-collapse: collapse; background: rgba(0,0,0,0.3); }
+            th, td { padding: 10px; border: 1px solid #ffcc00; text-align: left; }
+            th { color: #ffcc00; }
+            .btn { background: #ffcc00; color: #003399; padding: 10px; text-decoration: none; font-weight: bold; border-radius: 5px; }
+        </style>
+    </head>
+    <body>
+        <a href="/" class="btn">← BACK TO LIVE</a>
+        <h1>Wait Time History</h1>
+        <table>
+            <tr><th>Time</th><th>Park</th><th>Attraction</th><th>Wait</th><th>Status</th></tr>
+            {% for log in logs %}
+            <tr>
+                <td>{{ log.timestamp.strftime('%H:%M') }}</td>
+                <td>{{ log.park_name }}</td>
+                <td>{{ log.ride_name }}</td>
+                <td>{{ log.wait_time }}m</td>
+                <td style="color: {{ '#00ff00' if log.status == 'OPEN' else '#ff3333' }}">{{ log.status }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </body>
+    </html>
+    """
+    return render_template_string(history_html, logs=logs)
+
+# --- INSERT MAIN_TEMPLATE STRING HERE (The HTML you shared) ---
+# [I have omitted the long template string for space, but make sure it's in your file!]
+
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+    try:
+        # Debug is True for your PC, but False for the Pi
+        app.run(host='0.0.0.0', port=5001, debug=True)
+    except (KeyboardInterrupt, SystemExit):
+        scheduler.shutdown()
     
     history_html = """
     <!DOCTYPE html>
