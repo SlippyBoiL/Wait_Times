@@ -219,7 +219,7 @@ MAIN_TEMPLATE = """
 <body>
     <div class="header">
         <span style="visibility:hidden;">SPACE</span>
-        <span>WALT DISNEY WORLD & UNIVERSAL RESORT</span>
+        <span>WALT DISNEY WORLD & UNIVERSAL RESORT (this is a test comment)</span>
         <button class="btn-fullscreen" onclick="toggleFullscreen()">[   ]</button>
     </div>
     
@@ -239,7 +239,7 @@ MAIN_TEMPLATE = """
             </div>
 
             <div class="suggestion-tab">
-                <div class="ai-title">✨ GEMINI LIVE GUIDE</div>
+                <div class="ai-title">Slippy Live Guide</div>
                 {% for tip in ai_tips %}<div class="tip-text">{{ tip }}</div>{% endfor %}
             </div>
 
