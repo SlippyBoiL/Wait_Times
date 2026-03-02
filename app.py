@@ -178,6 +178,7 @@ def index():
     return render_template_string(MAIN_TEMPLATE, playlist=playlist, top_5=top_5, hours=park_hours, ai_tips=ai_suggestions, is_evening=is_evening, last_updated=last_updated, delayed_rides=delayed_rides)
 
 # --- REFRESHED MAIN TEMPLATE ---
+# --- REFRESHED MAIN TEMPLATE ---
 MAIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -190,36 +191,52 @@ MAIN_TEMPLATE = """
     <style>
         :root { --disney-blue: #003399; --disney-gold: #ffcc00; --gemini-purple: #9b59b6; --downtime-red: #ff4444; }
         body { background: var(--disney-blue); color: white; font-family: 'Trebuchet MS', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        
         .header { background: var(--disney-gold); color: var(--disney-blue); padding: 12px; text-align: center; font-weight: bold; font-size: 1.6rem; border-bottom: 2px solid white; display: flex; justify-content: space-between; align-items: center; }
-        .top-waits-bar { background: rgba(0,0,0,0.5); display: flex; justify-content: space-around; padding: 8px; border-bottom: 2px solid var(--disney-gold); font-size: 0.8rem; }
+        .top-waits-bar { background: rgba(0,0,0,0.5); display: flex; justify-content: space-around; padding: 8px; border-bottom: 2px solid var(--disney-gold); font-size: 0.8rem; overflow-x: auto; white-space: nowrap; gap: 15px; }
         .evening-banner { background: linear-gradient(90deg, #4b0082, #8a2be2, #4b0082); color: white; text-align: center; padding: 6px; font-weight: bold; font-size: 0.9rem; letter-spacing: 2px; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 0.8; } 50% { opacity: 1; } 100% { opacity: 0.8; } }
+        
         .main { display: flex; flex: 1; overflow: hidden; }
-        .sidebar { width: 340px; background: rgba(0, 40, 120, 0.95); border-right: 4px solid var(--disney-gold); padding: 20px; display: flex; flex-direction: column; overflow-y: auto; }
+        .sidebar { width: 340px; background: rgba(0, 40, 120, 0.95); border-right: 4px solid var(--disney-gold); padding: 20px; display: flex; flex-direction: column; overflow-y: auto; box-sizing: border-box; }
         .sidebar::-webkit-scrollbar { width: 5px; } .sidebar::-webkit-scrollbar-thumb { background: var(--disney-gold); }
+        
         .suggestion-tab { background: linear-gradient(135deg, #2c3e50, #003399); border: 2px solid var(--gemini-purple); padding: 15px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
         .ai-title { color: #d499ff; font-weight: bold; font-size: 0.9rem; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
         .tip-text { font-size: 0.85rem; line-height: 1.4; margin-bottom: 10px; }
-        .sidebar-box { border: 2px solid var(--disney-gold); padding: 10px; border-radius: 5px; text-align: center; background: rgba(0,0,0,0.2); margin-bottom: 15px; }
         
+        .sidebar-box { border: 2px solid var(--disney-gold); padding: 10px; border-radius: 5px; text-align: center; background: rgba(0,0,0,0.2); margin-bottom: 15px; }
         .downtime-box { border: 2px solid var(--downtime-red); padding: 10px; border-radius: 5px; background: rgba(255,0,0,0.1); margin-bottom: 15px; }
         .downtime-title { color: var(--downtime-red); font-weight: bold; font-size: 0.9rem; margin-bottom: 8px; text-align: center; border-bottom: 1px solid var(--downtime-red); padding-bottom: 5px; }
         .downtime-list { list-style: none; padding: 0; margin: 0; max-height: 120px; overflow-y: auto; font-size: 0.75rem; text-align: left; }
         .downtime-list li { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
         
-        .content { flex: 1; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle, #0044bb 0%, #001133 100%); position: relative; }
+        .content { flex: 1; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle, #0044bb 0%, #001133 100%); position: relative; overflow-y: auto; }
         .ride-spotlight { width: 85%; max-width: 600px; padding: 40px; border-radius: 40px; background: rgba(255, 255, 255, 0.1); border: 5px solid var(--disney-gold); text-align: center; display: none; box-shadow: 0 0 60px rgba(0,0,0,0.6); backdrop-filter: blur(10px); }
         .active { display: block; animation: slideIn 0.8s ease-out; }
         @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         
         .btn-fullscreen { background: transparent; border: 2px solid var(--disney-blue); color: var(--disney-blue); font-weight: bold; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
         .btn-fullscreen:hover { background: var(--disney-blue); color: var(--disney-gold); }
+
+        /* --- MOBILE RESPONSIVE CSS --- */
+        @media (max-width: 800px) {
+            body { overflow-y: auto; }
+            .header { font-size: 1.1rem; flex-direction: column; gap: 10px; }
+            .main { flex-direction: column-reverse; overflow: visible; }
+            .sidebar { width: 100%; border-right: none; border-top: 4px solid var(--disney-gold); }
+            .content { padding: 20px 0; min-height: 60vh; }
+            .ride-spotlight { padding: 20px; width: 90%; }
+            .ride-title { font-size: 1.8rem !important; }
+            .ride-wait-num { font-size: 5rem !important; }
+            .ride-wait-text { font-size: 1.2rem !important; }
+        }
     </style>
 </head>
 <body>
     <div class="header">
-        <span style="visibility:hidden;">SPACE</span>
-        <span>WALT DISNEY WORLD & UNIVERSAL RESORT (this is a test comment)</span>
+        <span style="visibility:hidden; display:none;">SPACE</span>
+        <span>WALT DISNEY WORLD & UNIVERSAL</span>
         <button class="btn-fullscreen" onclick="toggleFullscreen()">[   ]</button>
     </div>
     
@@ -230,23 +247,17 @@ MAIN_TEMPLATE = """
     <div class="top-waits-bar">
         {% for ride in top_5 %}<span>{{ ride.name | upper }}: <b style="color:var(--disney-gold)">{{ ride.wait }} MIN</b></span>{% endfor %}
     </div>
+    
     <div class="main">
         <div class="sidebar">
-            
             <div class="sidebar-box" style="display:flex; justify-content: space-between; align-items: center;">
                 <div id="clock" style="font-size: 1.4rem; font-weight: bold;">--:--</div>
                 <div style="font-size: 0.7rem; color: #aaa; text-align: right;">Updated:<br><span style="color:var(--disney-gold);">{{ last_updated }}</span></div>
             </div>
 
             <div class="suggestion-tab">
-                <div class="ai-title">Slippy Live Guide</div>
+                <div class="ai-title">✨ GEMINI LIVE GUIDE</div>
                 {% for tip in ai_tips %}<div class="tip-text">{{ tip }}</div>{% endfor %}
-            </div>
-
-            <div class="sidebar-box" style="padding: 15px;">
-                <div style="font-size: 0.8rem; color: var(--disney-gold); font-weight: bold; margin-bottom: 5px;">ORLANDO WEATHER</div>
-                <div style="font-size: 1.5rem;">☀️ 82°F</div>
-                <div style="font-size: 0.7rem; color: #ccc;">Mostly Sunny (API Ready)</div>
             </div>
 
             <div class="downtime-box">
@@ -279,17 +290,15 @@ MAIN_TEMPLATE = """
         <div class="content">
             {% for ride in playlist %}
             <div class="ride-spotlight" data-name="{{ ride.name.lower() }}" onclick="showHistory('{{ ride.name }}')">
-                <div style="color:var(--disney-gold); letter-spacing:4px; margin-bottom:10px;">{{ ride.park | upper }}</div>
-                <div style="font-size:2.8rem; font-weight:bold; margin-bottom:20px;">{{ ride.name }}</div>
+                <div style="color:var(--disney-gold); letter-spacing:4px; margin-bottom:10px; font-size:0.9rem;">{{ ride.park | upper }}</div>
+                <div class="ride-title" style="font-size:2.8rem; font-weight:bold; margin-bottom:20px;">{{ ride.name }}</div>
                 {% if ride.status == "OPEN" %}
                     <div style="opacity:0.7;">CURRENT WAIT</div>
-                    
                     {% set wait_color = '#00ff00' if ride.wait < 30 else ('#ffcc00' if ride.wait <= 60 else '#ff3333') %}
-                    
-                    <div style="font-size:7rem; font-weight:bold; color:{{ wait_color }};">{{ ride.wait }}</div>
-                    <div style="font-size:1.6rem; color:{{ wait_color }};">MINUTES</div>
+                    <div class="ride-wait-num" style="font-size:7rem; font-weight:bold; color:{{ wait_color }};">{{ ride.wait }}</div>
+                    <div class="ride-wait-text" style="font-size:1.6rem; color:{{ wait_color }};">MINUTES</div>
                 {% else %}
-                    <div style="font-size:4.5rem; color:var(--downtime-red); font-weight:bold;">DELAYED</div>
+                    <div class="ride-wait-num" style="font-size:4.5rem; color:var(--downtime-red); font-weight:bold;">DELAYED</div>
                 {% endif %}
             </div>
             {% endfor %}
@@ -298,25 +307,14 @@ MAIN_TEMPLATE = """
     
     <div id="overlay" onclick="closeModal()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:50;"></div>
     <div id="modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#001133; padding:25px; border:4px solid var(--disney-gold); border-radius:20px; z-index:100; width:80%; max-width:700px;">
-        <h2 id="modalTitle" style="color:var(--disney-gold); margin-top:0;"></h2>
+        <h2 id="modalTitle" style="color:var(--disney-gold); margin-top:0; font-size:1.5rem;"></h2>
         <canvas id="chart"></canvas>
     </div>
     
     <script>
-        // Auto Refresh every 5 minutes (300,000 milliseconds)
         setTimeout(() => { window.location.reload(); }, 300000);
-
-        // Service Worker Registration for PWA
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js'); });
-        }
-
-        // Fullscreen Toggle
-        function toggleFullscreen() {
-            if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(err => { console.log("Error attempting to enable fullscreen:", err); }); } 
-            else { if (document.exitFullscreen) { document.exitFullscreen(); } }
-        }
-
+        if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js'); }); }
+        function toggleFullscreen() { if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(err => { console.log(err); }); } else { if (document.exitFullscreen) { document.exitFullscreen(); } } }
         function updateClock() { const now = new Date(); document.getElementById('clock').innerText = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}); }
         setInterval(updateClock, 1000); updateClock();
         
@@ -350,6 +348,7 @@ MAIN_TEMPLATE = """
 </body>
 </html>
 """
+
 
 if __name__ == '__main__':
     with app.app_context():
