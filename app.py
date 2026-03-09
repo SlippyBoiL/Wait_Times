@@ -5,7 +5,6 @@ import requests
 import os
 import random
 import subprocess
-import json
 from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
@@ -15,7 +14,7 @@ def get_git_version():
     try:
         return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('ascii').strip()
     except:
-        return "v2.6.0-Mobile-Optimized"
+        return "v3.0.0-Global"
 
 # --- DATABASE SETUP ---
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -31,10 +30,15 @@ class WaitHistory(db.Model):
     status = db.Column(db.String(20))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
-# --- CONFIGURATION & DYNAMIC HOURS ---
+# --- ALL 7 PARKS INCLUDED ---
 PARKS = {
-    "Magic Kingdom": 6, "EPCOT": 5, "Hollywood Studios": 7, "Animal Kingdom": 8,
-    "Universal Studios Florida": 65, "Islands of Adventure": 64, "Epic Universe": 334
+    "Magic Kingdom": 6, 
+    "EPCOT": 5, 
+    "Hollywood Studios": 7, 
+    "Animal Kingdom": 8,
+    "Universal Studios Florida": 65, 
+    "Islands of Adventure": 64, 
+    "Epic Universe": 334
 }
 
 park_hours = {
@@ -57,26 +61,17 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(func=daily_maintenance, trigger="interval", hours=24)
 scheduler.start()
 
-# --- GEMINI SUGGESTION ENGINE ---
 def generate_ai_advice(playlist):
     tips = []
     open_rides = [r for r in playlist if r['status'] == "OPEN"]
-    if not open_rides: return ["Parks are currently winding down. Check back for rope drop!"]
+    if not open_rides: return ["Parks are resting. Time to plan tomorrow's rope drop!"]
     
-    thrill_hits = ["Mine Train", "Space Mountain", "VelociCoaster", "Hagrid", "Stardust Racers", "Monsters Unchained"]
+    thrill_hits = ["VelociCoaster", "Hagrid", "Stardust Racers", "Monsters Unchained", "Guardians"]
     for ride in open_rides:
-        if any(hit in ride['name'] for hit in thrill_hits) and ride['wait'] <= 40:
+        if any(hit in ride['name'] for hit in thrill_hits) and ride['wait'] <= 45:
             tips.append(f"🎢 THRILL ALERT: {ride['name']} is at {ride['wait']} mins!")
     
-    return tips[:2] if tips else ["All systems nominal. Enjoy the magic!"]
-
-# --- ROUTES ---
-
-@app.route('/api/history/<path:ride_name>')
-def get_ride_history(ride_name):
-    cutoff = datetime.utcnow() - timedelta(hours=24)
-    history = WaitHistory.query.filter(WaitHistory.ride_name == ride_name, WaitHistory.timestamp > cutoff).order_by(WaitHistory.timestamp.asc()).all()
-    return jsonify([{"time": h.timestamp.strftime("%H:%M"), "wait": h.wait_time} for h in history])
+    return tips[:2] if tips else ["All systems nominal. Have a magical day!"]
 
 @app.route('/')
 def index():
@@ -110,53 +105,49 @@ def index():
     
     return render_template_string(MAIN_TEMPLATE, playlist=playlist, top_5=top_5, hours=park_hours, ai_tips=ai_suggestions, last_updated=datetime.now().strftime("%I:%M %p"), delayed_rides=delayed_rides)
 
-# --- THE FRONTEND (UI) ---
+# --- REFRESHED MAIN TEMPLATE ---
 MAIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
     <title>Resort TV Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --disney-blue: #003399; --disney-gold: #ffcc00; --downtime-red: #ff4444; }
         body { background: var(--disney-blue); color: white; font-family: 'Trebuchet MS', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         
-        /* Header Spacing Fix */
-        .header { background: var(--disney-gold); color: var(--disney-blue); padding: 8px; text-align: center; font-weight: bold; font-size: 1.1rem; border-bottom: 2px solid white; }
+        .header { background: var(--disney-gold); color: var(--disney-blue); padding: 10px; text-align: center; font-weight: bold; font-size: 1.1rem; border-bottom: 2px solid white; }
         
-        /* Marquee Bar */
-        .top-waits-bar { background: rgba(0,0,0,0.5); padding: 4px 0; border-bottom: 2px solid var(--disney-gold); font-size: 0.75rem; overflow: hidden; white-space: nowrap; }
-        .marquee-content { display: inline-block; animation: marquee 40s linear infinite; }
+        .top-waits-bar { background: rgba(0,0,0,0.5); padding: 6px 0; border-bottom: 2px solid var(--disney-gold); font-size: 0.8rem; overflow: hidden; white-space: nowrap; }
+        .marquee-content { display: inline-block; animation: marquee 35s linear infinite; }
         @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
         .marquee-item { margin-right: 40px; }
 
         .main { display: flex; flex: 1; overflow: hidden; }
-        .sidebar { width: 320px; background: rgba(0, 30, 90, 0.9); border-right: 3px solid var(--disney-gold); padding: 15px; display: flex; flex-direction: column; overflow-y: auto; }
+        .sidebar { width: 330px; background: rgba(0, 30, 90, 0.95); border-right: 3px solid var(--disney-gold); padding: 15px; display: flex; flex-direction: column; overflow-y: auto; }
         
         .content { flex: 1; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle, #0044bb 0%, #001133 100%); position: relative; }
-        .ride-spotlight { width: 90%; max-width: 500px; padding: 25px; border-radius: 30px; background: rgba(255, 255, 255, 0.08); border: 4px solid var(--disney-gold); text-align: center; display: none; box-shadow: 0 0 40px rgba(0,0,0,0.5); backdrop-filter: blur(8px); }
-        .active { display: block; animation: fadeIn 0.6s; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .ride-spotlight { width: 90%; max-width: 500px; padding: 30px; border-radius: 35px; background: rgba(255, 255, 255, 0.1); border: 4px solid var(--disney-gold); text-align: center; display: none; box-shadow: 0 0 50px rgba(0,0,0,0.6); backdrop-filter: blur(10px); }
+        .active { display: block; animation: slideIn 0.8s ease-out; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Park View Overlay */
-        #parkOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #001133; z-index: 1000; padding: 20px; box-sizing: border-box; overflow-y: auto; }
-        .park-title { color: var(--disney-gold); border-bottom: 2px solid var(--disney-gold); padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; }
-        .park-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
-        .ride-row { background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid var(--disney-gold); font-size: 0.9rem; }
+        /* Park Explorer Overlay */
+        #parkOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--disney-blue); z-index: 2000; padding: 20px; box-sizing: border-box; overflow-y: auto; }
+        .park-title { color: var(--disney-gold); border-bottom: 2px solid var(--disney-gold); padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; font-size: 1.4rem; font-weight: bold; }
+        .ride-row { background: rgba(255,255,255,0.08); padding: 15px; border-radius: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid var(--disney-gold); }
         
-        .clickable { cursor: pointer; transition: 0.2s; }
-        .clickable:hover { color: var(--disney-gold); transform: scale(1.02); }
+        .clickable { cursor: pointer; transition: 0.3s; }
+        .clickable:hover { color: var(--disney-gold); text-decoration: underline; }
 
         @media (max-width: 800px) {
             .main { flex-direction: column-reverse; overflow: visible; }
             .sidebar { width: 100%; border-right: none; border-top: 3px solid var(--disney-gold); }
-            .content { min-height: 55vh; padding: 20px 0; }
+            .content { min-height: 60vh; }
         }
     </style>
 </head>
 <body>
-    <div class="header">WDW & UNIVERSAL DASHBOARD</div>
+    <div class="header">WALT DISNEY WORLD & UNIVERSAL DASHBOARD</div>
     
     <div class="top-waits-bar">
         <div class="marquee-content">
@@ -166,19 +157,19 @@ MAIN_TEMPLATE = """
     
     <div class="main">
         <div class="sidebar">
-            <div style="font-size: 1.2rem; font-weight: bold; margin-bottom: 15px; display:flex; justify-content: space-between;">
+            <div style="font-size: 1.3rem; font-weight: bold; margin-bottom: 20px; display:flex; justify-content: space-between;">
                 <span>{{ last_updated }}</span>
                 <span style="color:var(--disney-gold);">FLORIDA</span>
             </div>
             
-            <div style="background: rgba(155, 89, 182, 0.2); border: 2px solid #9b59b6; padding: 12px; border-radius: 10px; margin-bottom: 20px;">
-                <div style="font-size: 0.8rem; font-weight: bold; color: #d499ff; margin-bottom: 5px;">✨ GEMINI LIVE ADVICE</div>
-                {% for tip in ai_tips %}<div style="font-size: 0.8rem; margin-bottom: 5px;">{{ tip }}</div>{% endfor %}
+            <div style="background: rgba(155, 89, 182, 0.2); border: 2px solid #9b59b6; padding: 15px; border-radius: 12px; margin-bottom: 20px;">
+                <div style="font-size: 0.85rem; font-weight: bold; color: #d499ff; margin-bottom: 8px;">✨ GEMINI LIVE ADVICE</div>
+                {% for tip in ai_tips %}<div style="font-size: 0.85rem; line-height: 1.4; margin-bottom: 8px;">{{ tip }}</div>{% endfor %}
             </div>
 
-            <div style="font-weight:bold; color:var(--disney-gold); margin-bottom: 10px; border-bottom: 1px solid var(--disney-gold);">TAP TO VIEW ALL WAITS</div>
+            <div style="font-weight:bold; color:var(--disney-gold); margin-bottom: 12px; border-bottom: 1px solid var(--disney-gold); font-size: 0.9rem;">TAP PARK TO EXPLORE ALL WAITS</div>
             {% for park, time in hours.items() %}
-                <div class="clickable" onclick="openPark('{{ park }}')" style="margin-bottom: 12px; font-size: 0.85rem;">
+                <div class="clickable" onclick="openPark('{{ park }}')" style="margin-bottom: 15px; font-size: 0.9rem;">
                     <b>{{ park }}</b><br><span style="color:#00ff00;">{{ time }}</span>
                 </div>
             {% endfor %}
@@ -187,13 +178,13 @@ MAIN_TEMPLATE = """
         <div class="content">
             {% for ride in playlist %}
             <div class="ride-spotlight" data-park="{{ ride.park }}">
-                <div class="clickable" onclick="openPark('{{ ride.park }}')" style="color:var(--disney-gold); font-size:0.8rem; letter-spacing:3px; margin-bottom:10px;">{{ ride.park | upper }}</div>
-                <div style="font-size:1.8rem; font-weight:bold; margin-bottom:15px;">{{ ride.name }}</div>
+                <div class="clickable" onclick="openPark('{{ ride.park }}')" style="color:var(--disney-gold); font-size:0.85rem; letter-spacing:4px; margin-bottom:12px;">{{ ride.park | upper }}</div>
+                <div style="font-size:2rem; font-weight:bold; margin-bottom:20px;">{{ ride.name }}</div>
                 {% if ride.status == "OPEN" %}
-                    <div style="font-size:4rem; font-weight:bold; color:#00ff00;">{{ ride.wait }}</div>
-                    <div style="font-size:1rem; color:#00ff00;">MINUTES</div>
+                    <div style="font-size:5.5rem; font-weight:bold; color:#00ff00;">{{ ride.wait }}</div>
+                    <div style="font-size:1.2rem; color:#00ff00;">MINUTES</div>
                 {% else %}
-                    <div style="font-size:3rem; font-weight:bold; color:var(--downtime-red);">DELAYED</div>
+                    <div style="font-size:3.5rem; font-weight:bold; color:var(--downtime-red);">DELAYED</div>
                 {% endif %}
             </div>
             {% endfor %}
@@ -202,10 +193,10 @@ MAIN_TEMPLATE = """
 
     <div id="parkOverlay">
         <div class="park-title">
-            <span id="overlayName">PARK OVERVIEW</span>
-            <button onclick="closePark()" style="background:var(--downtime-red); color:white; border:none; padding:8px 15px; border-radius:5px; font-weight:bold;">CLOSE</button>
+            <span id="overlayName">EXPLORER</span>
+            <button onclick="closePark()" style="background:var(--downtime-red); color:white; border:none; padding:10px 20px; border-radius:8px; font-weight:bold; cursor:pointer;">CLOSE</button>
         </div>
-        <div id="rideGrid" class="park-grid"></div>
+        <div id="rideGrid"></div>
     </div>
     
     <script>
@@ -219,18 +210,17 @@ MAIN_TEMPLATE = """
             currentIdx = (currentIdx + 1) % cards.length;
             cards[currentIdx].classList.add('active');
         }
-        if (cards.length > 0) { cards[0].classList.add('active'); setInterval(cycle, 7000); }
+        if (cards.length > 0) { cards[0].classList.add('active'); setInterval(cycle, 7500); }
 
         function openPark(parkName) {
             document.getElementById('overlayName').innerText = parkName.toUpperCase();
             const grid = document.getElementById('rideGrid');
             grid.innerHTML = '';
             
-            // Build the list of rides for the selected park
             const allRides = Array.from(cards).filter(c => c.dataset.park === parkName);
             allRides.forEach(c => {
                 const name = c.querySelector('div:nth-child(2)').innerText;
-                const wait = c.querySelector('[style*="font-size:4rem"]') ? c.querySelector('[style*="font-size:4rem"]').innerText : "DOWN";
+                const wait = c.querySelector('[style*="font-size:5.5rem"]') ? c.querySelector('[style*="font-size:5.5rem"]').innerText : "DOWN";
                 const row = document.createElement('div');
                 row.className = 'ride-row';
                 row.innerHTML = `<span>${name}</span><b style="color:${wait==='DOWN'?'#ff4444':'#00ff00'}">${wait} ${wait==='DOWN'?'':'MIN'}</b>`;
