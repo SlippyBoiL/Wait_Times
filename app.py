@@ -108,18 +108,23 @@ MAIN_TEMPLATE = """
         .marquee-item { margin-right: 40px; }
         .main { display: flex; flex: 1; overflow: hidden; }
         
-        /* Mobile Fix: Scrolling Sidebar */
         .sidebar { width: 340px; background: rgba(0, 40, 120, 0.95); border-right: 4px solid var(--disney-gold); padding: 20px; display: flex; flex-direction: column; overflow-y: auto; box-sizing: border-box; }
         
         .content { flex: 1; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle, #0044bb 0%, #001133 100%); position: relative; overflow-y: auto; }
         .ride-spotlight { width: 85%; max-width: 600px; padding: 30px; border-radius: 40px; background: rgba(255, 255, 255, 0.1); border: 5px solid var(--disney-gold); text-align: center; display: none; box-shadow: 0 0 60px rgba(0,0,0,0.6); backdrop-filter: blur(10px); }
         .active { display: block; animation: slideIn 0.8s ease-out; }
         @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        #parkOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--disney-blue); z-index: 2000; padding: 20px; box-sizing: border-box; overflow-y: auto; }
+        
+        /* Modals */
+        #parkOverlay, #algoOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--disney-blue); z-index: 2000; padding: 20px; box-sizing: border-box; overflow-y: auto; }
         .park-title { color: var(--disney-gold); border-bottom: 2px solid var(--disney-gold); padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
         .ride-row { background: rgba(255,255,255,0.08); padding: 15px; border-radius: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid var(--disney-gold); }
         .clickable { cursor: pointer; transition: 0.3s; }
         .clickable:hover { color: var(--disney-gold); text-decoration: underline; }
+        
+        /* Algo Button */
+        .algo-btn { background: linear-gradient(135deg, #d4af37, #ffcc00); color: #001133; padding: 15px; border-radius: 10px; text-align: center; font-weight: bold; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); font-size: 1rem; border: 2px solid white; cursor: pointer; }
+        
         @media (max-width: 800px) {
             .main { flex-direction: column-reverse; overflow: visible; }
             .sidebar { width: 100%; border-right: none; border-top: 3px solid var(--disney-gold); max-height: 40vh; }
@@ -137,6 +142,11 @@ MAIN_TEMPLATE = """
             <div style="font-size: 1.3rem; font-weight: bold; margin-bottom: 20px; display:flex; justify-content: space-between;">
                 <span>{{ last_updated }}</span><span style="color:var(--disney-gold);">FLORIDA</span>
             </div>
+            
+            <div class="algo-btn clickable" onclick="openAlgorithm()">
+                🎯 RUN SMART GUIDE ALGORITHM
+            </div>
+
             <div style="background: rgba(155, 89, 182, 0.2); border: 2px solid #9b59b6; padding: 15px; border-radius: 12px; margin-bottom: 20px;">
                 <div style="font-size: 0.85rem; font-weight: bold; color: #d499ff; margin-bottom: 8px;">✨ GEMINI LIVE ADVICE</div>
                 {% for tip in ai_tips %}<div style="font-size: 0.85rem; line-height: 1.4; margin-bottom: 8px;">{{ tip }}</div>{% endfor %}
@@ -158,19 +168,28 @@ MAIN_TEMPLATE = """
             </div>{% endfor %}
         </div>
     </div>
+    
     <div id="parkOverlay">
         <div class="park-title"><span id="overlayName">EXPLORER</span><button onclick="closePark()" style="background:var(--downtime-red); color:white; border:none; padding:10px 20px; border-radius:8px; font-weight:bold; cursor:pointer;">CLOSE</button></div>
         <div id="rideGrid"></div>
     </div>
+
+    <div id="algoOverlay">
+        <div class="park-title"><span style="color:white; font-size:1.2rem;">🎯 SMART GUIDE</span><button onclick="closeAlgorithm()" style="background:var(--downtime-red); color:white; border:none; padding:10px 20px; border-radius:8px; font-weight:bold; cursor:pointer;">CLOSE</button></div>
+        <div id="algoContent"></div>
+    </div>
+
     <script>
         let currentIdx = 0; const cards = document.querySelectorAll('.ride-spotlight');
         function cycle() {
-            if (document.getElementById('parkOverlay').style.display === 'block') return;
+            if (document.getElementById('parkOverlay').style.display === 'block' || document.getElementById('algoOverlay').style.display === 'block') return;
             cards[currentIdx].classList.remove('active');
             currentIdx = (currentIdx + 1) % cards.length;
             cards[currentIdx].classList.add('active');
         }
         if (cards.length > 0) { cards[0].classList.add('active'); setInterval(cycle, 7500); }
+        
+        // PARK EXPLORER LOGIC
         function openPark(parkName) {
             document.getElementById('overlayName').innerText = parkName.toUpperCase();
             const grid = document.getElementById('rideGrid'); grid.innerHTML = '';
@@ -186,6 +205,74 @@ MAIN_TEMPLATE = """
             document.getElementById('parkOverlay').style.display = 'block';
         }
         function closePark() { document.getElementById('parkOverlay').style.display = 'none'; }
+
+        // ALGORITHM LOGIC
+        function openAlgorithm() {
+            document.getElementById('algoOverlay').style.display = 'block';
+            renderAlgoParks();
+        }
+        function closeAlgorithm() { document.getElementById('algoOverlay').style.display = 'none'; }
+        
+        function renderAlgoParks() {
+            const content = document.getElementById('algoContent');
+            let html = '<h3 style="color:var(--disney-gold); text-align:center; margin-bottom:20px;">Which park are you in?</h3><div style="display:grid; gap:12px;">';
+            const parkNames = ["Magic Kingdom", "EPCOT", "Hollywood Studios", "Animal Kingdom", "Universal Studios Florida", "Islands of Adventure", "Epic Universe"];
+            parkNames.forEach(p => {
+                html += `<button class="clickable" onclick="runAlgorithm('${p}')" style="padding:15px; background:rgba(255,255,255,0.1); border:2px solid var(--disney-gold); color:white; font-size:1.1rem; border-radius:10px; font-weight:bold;">${p.toUpperCase()}</button>`;
+            });
+            html += '</div>';
+            content.innerHTML = html;
+        }
+
+        function runAlgorithm(parkName) {
+            const content = document.getElementById('algoContent');
+            let validRides = [];
+            
+            // Scan DOM for rides matching the park, filter out DOWN and <= 5 mins
+            cards.forEach(c => {
+                if (c.dataset.park === parkName) {
+                    const name = c.querySelector('div:nth-child(2)').innerText;
+                    const waitText = c.querySelector('[style*="font-size:5.5rem"]') ? c.querySelector('[style*="font-size:5.5rem"]').innerText : "DOWN";
+                    if (waitText !== "DOWN") {
+                        const waitNum = parseInt(waitText);
+                        if (waitNum > 5) {
+                            validRides.push({ name: name, wait: waitNum });
+                        }
+                    }
+                }
+            });
+
+            if (validRides.length === 0) {
+                content.innerHTML = `<h3 style="color:var(--disney-gold); text-align:center;">${parkName.toUpperCase()}</h3><p style="text-align:center;">No optimal rides found right now (all are either walk-ons, down, or closed).</p><button onclick="renderAlgoParks()" style="width:100%; padding:15px; background:var(--disney-blue); border:2px solid var(--disney-gold); color:white; font-weight:bold; border-radius:10px; margin-top:20px;">BACK</button>`;
+                return;
+            }
+
+            // Sort by lowest wait
+            validRides.sort((a, b) => a.wait - b.wait);
+            const bestRide = validRides[0];
+
+            let html = `<h3 style="color:var(--disney-gold); text-align:center; margin-bottom: 5px;">${parkName.toUpperCase()}</h3>`;
+            html += `<div style="font-size:0.8rem; text-align:center; margin-bottom:20px; color:#ccc;">(Excluding rides with 5 min placeholder waits)</div>`;
+            
+            // Highlight the absolute best ride
+            html += `<div style="background:rgba(0,255,0,0.1); border:3px solid #00ff00; padding:25px; border-radius:15px; text-align:center; box-shadow: 0 0 20px rgba(0,255,0,0.2);">`;
+            html += `<div style="font-size:1.1rem; margin-bottom:10px; font-weight:bold;">🎯 OPTIMAL TARGET</div>`;
+            html += `<div style="font-size:1.6rem; font-weight:bold; margin-bottom:15px;">${bestRide.name}</div>`;
+            html += `<div style="font-size:4.5rem; font-weight:bold; color:#00ff00;">${bestRide.wait}</div>`;
+            html += `<div style="font-size:1rem; color:#00ff00;">MINUTES</div>`;
+            html += `</div>`;
+            
+            // Show runner ups
+            if (validRides.length > 1) {
+                html += `<div style="margin-top:25px; font-weight:bold; color:var(--disney-gold); margin-bottom:10px;">NEXT BEST OPTIONS:</div>`;
+                for(let i=1; i<Math.min(4, validRides.length); i++) {
+                     html += `<div class="ride-row"><span>${validRides[i].name}</span><b style="color:#00ff00">${validRides[i].wait} MIN</b></div>`;
+                }
+            }
+
+            html += `<button class="clickable" onclick="renderAlgoParks()" style="width:100%; padding:15px; background:var(--disney-blue); border:2px solid var(--disney-gold); color:white; font-weight:bold; border-radius:10px; margin-top:20px;">CHOOSE ANOTHER PARK</button>`;
+            content.innerHTML = html;
+        }
     </script>
 </body>
 </html>
