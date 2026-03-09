@@ -9,13 +9,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
 
-# --- GIT VERSION TRACKER ---
-def get_git_version():
-    try:
-        return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('ascii').strip()
-    except:
-        return "v3.0.0-Global"
-
 # --- DATABASE SETUP ---
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'waits.db')
@@ -30,7 +23,7 @@ class WaitHistory(db.Model):
     status = db.Column(db.String(20))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
-# --- ALL 7 PARKS INCLUDED ---
+# --- ALL 7 PARKS CONFIGURATION ---
 PARKS = {
     "Magic Kingdom": 6, 
     "EPCOT": 5, 
@@ -64,7 +57,7 @@ scheduler.start()
 def generate_ai_advice(playlist):
     tips = []
     open_rides = [r for r in playlist if r['status'] == "OPEN"]
-    if not open_rides: return ["Parks are resting. Time to plan tomorrow's rope drop!"]
+    if not open_rides: return ["Parks are waking up. Check back for rope drop!"]
     
     thrill_hits = ["VelociCoaster", "Hagrid", "Stardust Racers", "Monsters Unchained", "Guardians"]
     for ride in open_rides:
@@ -105,7 +98,7 @@ def index():
     
     return render_template_string(MAIN_TEMPLATE, playlist=playlist, top_5=top_5, hours=park_hours, ai_tips=ai_suggestions, last_updated=datetime.now().strftime("%I:%M %p"), delayed_rides=delayed_rides)
 
-# --- REFRESHED MAIN TEMPLATE ---
+# --- UI TEMPLATE ---
 MAIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -116,24 +109,24 @@ MAIN_TEMPLATE = """
         :root { --disney-blue: #003399; --disney-gold: #ffcc00; --downtime-red: #ff4444; }
         body { background: var(--disney-blue); color: white; font-family: 'Trebuchet MS', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         
-        .header { background: var(--disney-gold); color: var(--disney-blue); padding: 10px; text-align: center; font-weight: bold; font-size: 1.1rem; border-bottom: 2px solid white; }
+        .header { background: var(--disney-gold); color: var(--disney-blue); padding: 8px 15px; text-align: center; font-weight: bold; font-size: 1.1rem; border-bottom: 2px solid white; }
         
-        .top-waits-bar { background: rgba(0,0,0,0.5); padding: 6px 0; border-bottom: 2px solid var(--disney-gold); font-size: 0.8rem; overflow: hidden; white-space: nowrap; }
+        .top-waits-bar { background: rgba(0,0,0,0.5); padding: 4px 0; border-bottom: 2px solid var(--disney-gold); font-size: 0.8rem; overflow: hidden; white-space: nowrap; height: 25px; display: flex; align-items: center; }
         .marquee-content { display: inline-block; animation: marquee 35s linear infinite; }
         @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
         .marquee-item { margin-right: 40px; }
 
         .main { display: flex; flex: 1; overflow: hidden; }
-        .sidebar { width: 330px; background: rgba(0, 30, 90, 0.95); border-right: 3px solid var(--disney-gold); padding: 15px; display: flex; flex-direction: column; overflow-y: auto; }
+        .sidebar { width: 340px; background: rgba(0, 40, 120, 0.95); border-right: 4px solid var(--disney-gold); padding: 20px; display: flex; flex-direction: column; overflow-y: auto; box-sizing: border-box; }
         
-        .content { flex: 1; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle, #0044bb 0%, #001133 100%); position: relative; }
-        .ride-spotlight { width: 90%; max-width: 500px; padding: 30px; border-radius: 35px; background: rgba(255, 255, 255, 0.1); border: 4px solid var(--disney-gold); text-align: center; display: none; box-shadow: 0 0 50px rgba(0,0,0,0.6); backdrop-filter: blur(10px); }
+        .content { flex: 1; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle, #0044bb 0%, #001133 100%); position: relative; overflow-y: auto; }
+        .ride-spotlight { width: 85%; max-width: 600px; padding: 30px; border-radius: 40px; background: rgba(255, 255, 255, 0.1); border: 5px solid var(--disney-gold); text-align: center; display: none; box-shadow: 0 0 60px rgba(0,0,0,0.6); backdrop-filter: blur(10px); }
         .active { display: block; animation: slideIn 0.8s ease-out; }
-        @keyframes slideIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Park Explorer Overlay */
-        #parkOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--disney-blue); z-index: 2000; padding: 20px; box-sizing: border-box; overflow-y: auto; }
-        .park-title { color: var(--disney-gold); border-bottom: 2px solid var(--disney-gold); padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; font-size: 1.4rem; font-weight: bold; }
+        #parkOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--disney-blue); z-index: 2000; padding: 20px; box-sizing: border-box; overflow-y: auto; animation: slideUp 0.4s ease-out; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .park-title { color: var(--disney-gold); border-bottom: 2px solid var(--disney-gold); padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
         .ride-row { background: rgba(255,255,255,0.08); padding: 15px; border-radius: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid var(--disney-gold); }
         
         .clickable { cursor: pointer; transition: 0.3s; }
@@ -141,13 +134,13 @@ MAIN_TEMPLATE = """
 
         @media (max-width: 800px) {
             .main { flex-direction: column-reverse; overflow: visible; }
-            .sidebar { width: 100%; border-right: none; border-top: 3px solid var(--disney-gold); }
-            .content { min-height: 60vh; }
+            .sidebar { width: 100%; border-right: none; border-top: 4px solid var(--disney-gold); }
+            .content { padding: 20px 0; min-height: 60vh; }
         }
     </style>
 </head>
 <body>
-    <div class="header">WALT DISNEY WORLD & UNIVERSAL DASHBOARD</div>
+    <div class="header">WDW & UNIVERSAL DASHBOARD</div>
     
     <div class="top-waits-bar">
         <div class="marquee-content">
@@ -200,10 +193,7 @@ MAIN_TEMPLATE = """
     </div>
     
     <script>
-        setTimeout(() => { window.location.reload(); }, 300000);
-        
-        let currentIdx = 0; 
-        const cards = document.querySelectorAll('.ride-spotlight');
+        let currentIdx = 0; const cards = document.querySelectorAll('.ride-spotlight');
         function cycle() {
             if (document.getElementById('parkOverlay').style.display === 'block') return;
             cards[currentIdx].classList.remove('active');
@@ -216,19 +206,18 @@ MAIN_TEMPLATE = """
             document.getElementById('overlayName').innerText = parkName.toUpperCase();
             const grid = document.getElementById('rideGrid');
             grid.innerHTML = '';
-            
-            const allRides = Array.from(cards).filter(c => c.dataset.park === parkName);
-            allRides.forEach(c => {
-                const name = c.querySelector('div:nth-child(2)').innerText;
-                const wait = c.querySelector('[style*="font-size:5.5rem"]') ? c.querySelector('[style*="font-size:5.5rem"]').innerText : "DOWN";
-                const row = document.createElement('div');
-                row.className = 'ride-row';
-                row.innerHTML = `<span>${name}</span><b style="color:${wait==='DOWN'?'#ff4444':'#00ff00'}">${wait} ${wait==='DOWN'?'':'MIN'}</b>`;
-                grid.appendChild(row);
+            cards.forEach(c => {
+                if (c.dataset.park === parkName) {
+                    const name = c.querySelector('div:nth-child(2)').innerText;
+                    const wait = c.querySelector('[style*="font-size:5.5rem"]') ? c.querySelector('[style*="font-size:5.5rem"]').innerText : "DOWN";
+                    const row = document.createElement('div');
+                    row.className = 'ride-row';
+                    row.innerHTML = `<span>${name}</span><b style="color:${wait==='DOWN'?'#ff4444':'#00ff00'}">${wait} ${wait==='DOWN'?'':'MIN'}</b>`;
+                    grid.appendChild(row);
+                }
             });
             document.getElementById('parkOverlay').style.display = 'block';
         }
-
         function closePark() { document.getElementById('parkOverlay').style.display = 'none'; }
     </script>
 </body>
