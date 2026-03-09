@@ -1,4 +1,4 @@
-﻿from flask import Flask, render_template_string, jsonify, make_response
+from flask import Flask, render_template_string, jsonify, make_response
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import requests
@@ -15,9 +15,7 @@ def get_git_version():
     try:
         return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('ascii').strip()
     except:
-        return "Local-Dev"
-
-print(f"--- DASHBOARD STARTING: Version {get_git_version()} ---")
+        return "v2.6.0-Mobile-Optimized"
 
 # --- DATABASE SETUP ---
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -39,21 +37,15 @@ PARKS = {
     "Universal Studios Florida": 65, "Islands of Adventure": 64, "Epic Universe": 334
 }
 
-park_hours = {}
-
-def update_park_hours():
-    global park_hours
-    park_hours = {
-        "Magic Kingdom": "8:00 AM - 11:00 PM",
-        "EPCOT": "9:00 AM - 9:30 PM",
-        "Hollywood Studios": "8:30 AM - 9:00 PM",
-        "Animal Kingdom": "8:00 AM - 8:00 PM",
-        "Universal Studios Florida": "8:00 AM - 10:00 PM",
-        "Islands of Adventure": "8:00 AM - 10:00 PM",
-        "Epic Universe": "9:00 AM - 10:00 PM"
-    }
-
-update_park_hours()
+park_hours = {
+    "Magic Kingdom": "9:00 AM - 11:00 PM",
+    "EPCOT": "9:00 AM - 9:00 PM",
+    "Hollywood Studios": "9:00 AM - 9:00 PM",
+    "Animal Kingdom": "8:00 AM - 7:00 PM",
+    "Universal Studios Florida": "9:00 AM - 9:00 PM",
+    "Islands of Adventure": "9:00 AM - 8:00 PM",
+    "Epic Universe": "9:00 AM - 10:00 PM"
+}
 
 def daily_maintenance():
     with app.app_context():
@@ -63,55 +55,28 @@ def daily_maintenance():
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(func=daily_maintenance, trigger="interval", hours=24)
-scheduler.add_job(func=update_park_hours, trigger="interval", hours=24)
 scheduler.start()
 
 # --- GEMINI SUGGESTION ENGINE ---
 def generate_ai_advice(playlist):
     tips = []
     open_rides = [r for r in playlist if r['status'] == "OPEN"]
-    if not open_rides:
-        return ["It looks like the parks are currently closed. Plan your next selection!"]
+    if not open_rides: return ["Parks are currently winding down. Check back for rope drop!"]
     
     thrill_hits = ["Mine Train", "Space Mountain", "VelociCoaster", "Hagrid", "Stardust Racers", "Monsters Unchained"]
-    family_hits = ["Mickey & Minnie", "Slinky Dog", "Peter Pan", "Navi River"]
-    
     for ride in open_rides:
-        if any(hit in ride['name'] for hit in thrill_hits) and ride['wait'] <= 45:
-            tips.append(f"🎢 THRILL ALERT: {ride['name']} is at a rare low of {ride['wait']} mins!")
-        elif any(hit in ride['name'] for hit in family_hits) and ride['wait'] <= 35:
-            tips.append(f"👨‍👩‍👧 FAMILY PICK: {ride['name']} is only {ride['wait']} mins right now.")
-
-    return tips[:2]
+        if any(hit in ride['name'] for hit in thrill_hits) and ride['wait'] <= 40:
+            tips.append(f"🎢 THRILL ALERT: {ride['name']} is at {ride['wait']} mins!")
+    
+    return tips[:2] if tips else ["All systems nominal. Enjoy the magic!"]
 
 # --- ROUTES ---
-
-@app.route('/manifest.json')
-def manifest():
-    manifest_data = {
-        "name": "Resort TV Dashboard",
-        "short_name": "ResortTV",
-        "start_url": "/",
-        "display": "standalone",
-        "background_color": "#003399",
-        "theme_color": "#003399",
-        "icons": [{"src": "https://cdn-icons-png.flaticon.com/512/814/814513.png", "sizes": "512x512", "type": "image/png"}]
-    }
-    return jsonify(manifest_data)
-
-@app.route('/sw.js')
-def service_worker():
-    sw_code = "self.addEventListener('install', (e) => { }); self.addEventListener('fetch', (e) => { });"
-    response = make_response(sw_code)
-    response.headers['Content-Type'] = 'application/javascript'
-    return response
 
 @app.route('/api/history/<path:ride_name>')
 def get_ride_history(ride_name):
     cutoff = datetime.utcnow() - timedelta(hours=24)
     history = WaitHistory.query.filter(WaitHistory.ride_name == ride_name, WaitHistory.timestamp > cutoff).order_by(WaitHistory.timestamp.asc()).all()
-    data = [{"time": h.timestamp.strftime("%H:%M"), "wait": h.wait_time} for h in history]
-    return jsonify(data)
+    return jsonify([{"time": h.timestamp.strftime("%H:%M"), "wait": h.wait_time} for h in history])
 
 @app.route('/')
 def index():
@@ -128,11 +93,10 @@ def index():
                     is_open = r_data.get('is_open', False)
                     raw_wait = r_data.get('wait_time', 0)
                     status = "OPEN" if is_open else "DELAYED"
-                    display_wait = (raw_wait if raw_wait > 0 else 5) if is_open else 0
-                    ride_unit = {"name": r_data.get('name'), "park": park_name, "wait": display_wait, "status": status}
+                    ride_unit = {"name": r_data.get('name'), "park": park_name, "wait": raw_wait, "status": status}
                     playlist.append(ride_unit)
                     if status == "DELAYED": delayed_rides.append(ride_unit)
-                    db.session.add(WaitHistory(ride_name=ride_unit['name'], park_name=park_name, wait_time=display_wait, status=status))
+                    db.session.add(WaitHistory(ride_name=ride_unit['name'], park_name=park_name, wait_time=raw_wait, status=status))
 
             if 'lands' in data:
                 for land in data['lands']: process_rides(land.get('rides', []))
@@ -144,52 +108,50 @@ def index():
     top_5 = sorted([r for r in playlist if r['status'] == "OPEN"], key=lambda x: x['wait'], reverse=True)[:5]
     random.shuffle(playlist)
     
-    last_updated = datetime.now().strftime("%I:%M %p")
-    is_evening = datetime.now().hour >= 19
-    
-    return render_template_string(MAIN_TEMPLATE, playlist=playlist, top_5=top_5, hours=park_hours, ai_tips=ai_suggestions, is_evening=is_evening, last_updated=last_updated, delayed_rides=delayed_rides)
+    return render_template_string(MAIN_TEMPLATE, playlist=playlist, top_5=top_5, hours=park_hours, ai_tips=ai_suggestions, last_updated=datetime.now().strftime("%I:%M %p"), delayed_rides=delayed_rides)
 
-# --- REFRESHED MAIN TEMPLATE ---
+# --- THE FRONTEND (UI) ---
 MAIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
     <title>Resort TV Dashboard</title>
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#003399">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        :root { --disney-blue: #003399; --disney-gold: #ffcc00; --gemini-purple: #9b59b6; --downtime-red: #ff4444; }
+        :root { --disney-blue: #003399; --disney-gold: #ffcc00; --downtime-red: #ff4444; }
         body { background: var(--disney-blue); color: white; font-family: 'Trebuchet MS', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         
-        .header { background: var(--disney-gold); color: var(--disney-blue); padding: 8px 15px; text-align: center; font-weight: bold; font-size: 1.1rem; border-bottom: 2px solid white; display: flex; justify-content: center; align-items: center; }
+        /* Header Spacing Fix */
+        .header { background: var(--disney-gold); color: var(--disney-blue); padding: 8px; text-align: center; font-weight: bold; font-size: 1.1rem; border-bottom: 2px solid white; }
         
-        .top-waits-bar { background: rgba(0,0,0,0.5); padding: 4px 0; border-bottom: 2px solid var(--disney-gold); font-size: 0.8rem; overflow: hidden; white-space: nowrap; height: 25px; display: flex; align-items: center; }
-        .marquee-content { display: inline-block; animation: marquee 35s linear infinite; }
+        /* Marquee Bar */
+        .top-waits-bar { background: rgba(0,0,0,0.5); padding: 4px 0; border-bottom: 2px solid var(--disney-gold); font-size: 0.75rem; overflow: hidden; white-space: nowrap; }
+        .marquee-content { display: inline-block; animation: marquee 40s linear infinite; }
         @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
         .marquee-item { margin-right: 40px; }
 
         .main { display: flex; flex: 1; overflow: hidden; }
-        .sidebar { width: 340px; background: rgba(0, 40, 120, 0.95); border-right: 4px solid var(--disney-gold); padding: 20px; display: flex; flex-direction: column; overflow-y: auto; box-sizing: border-box; }
+        .sidebar { width: 320px; background: rgba(0, 30, 90, 0.9); border-right: 3px solid var(--disney-gold); padding: 15px; display: flex; flex-direction: column; overflow-y: auto; }
         
-        .content { flex: 1; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle, #0044bb 0%, #001133 100%); position: relative; overflow-y: auto; }
-        .ride-spotlight { width: 85%; max-width: 600px; padding: 30px; border-radius: 40px; background: rgba(255, 255, 255, 0.1); border: 5px solid var(--disney-gold); text-align: center; display: none; box-shadow: 0 0 60px rgba(0,0,0,0.6); backdrop-filter: blur(10px); }
-        .active { display: block; animation: slideIn 0.8s ease-out; }
-        @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .content { flex: 1; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle, #0044bb 0%, #001133 100%); position: relative; }
+        .ride-spotlight { width: 90%; max-width: 500px; padding: 25px; border-radius: 30px; background: rgba(255, 255, 255, 0.08); border: 4px solid var(--disney-gold); text-align: center; display: none; box-shadow: 0 0 40px rgba(0,0,0,0.5); backdrop-filter: blur(8px); }
+        .active { display: block; animation: fadeIn 0.6s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-        /* Park View Modal */
-        #parkModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--disney-blue); z-index: 200; overflow-y: auto; padding: 20px; box-sizing: border-box; animation: slideUp 0.4s ease-out; }
-        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-        .park-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 20px; }
-        .park-ride-item { background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid var(--disney-gold); }
+        /* Park View Overlay */
+        #parkOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #001133; z-index: 1000; padding: 20px; box-sizing: border-box; overflow-y: auto; }
+        .park-title { color: var(--disney-gold); border-bottom: 2px solid var(--disney-gold); padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; }
+        .park-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+        .ride-row { background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid var(--disney-gold); font-size: 0.9rem; }
         
+        .clickable { cursor: pointer; transition: 0.2s; }
+        .clickable:hover { color: var(--disney-gold); transform: scale(1.02); }
+
         @media (max-width: 800px) {
-            body { overflow-y: auto; }
             .main { flex-direction: column-reverse; overflow: visible; }
-            .sidebar { width: 100%; border-right: none; border-top: 4px solid var(--disney-gold); }
-            .content { padding: 20px 0; min-height: 60vh; }
-            .ride-spotlight { padding: 20px; width: 90%; }
+            .sidebar { width: 100%; border-right: none; border-top: 3px solid var(--disney-gold); }
+            .content { min-height: 55vh; padding: 20px 0; }
         }
     </style>
 </head>
@@ -198,94 +160,91 @@ MAIN_TEMPLATE = """
     
     <div class="top-waits-bar">
         <div class="marquee-content">
-            {% for ride in top_5 %}
-            <span class="marquee-item">{{ ride.name | upper }}: <b style="color:var(--disney-gold)">{{ ride.wait }} MIN</b></span>
-            {% endfor %}
+            {% for ride in top_5 %}<span class="marquee-item">{{ ride.name | upper }}: <b style="color:var(--disney-gold)">{{ ride.wait }} MIN</b></span>{% endfor %}
         </div>
     </div>
     
     <div class="main">
         <div class="sidebar">
-            <div class="sidebar-box" style="display:flex; justify-content: space-between; align-items: center; border: 2px solid var(--disney-gold); padding: 10px; border-radius: 5px; background: rgba(0,0,0,0.2); margin-bottom: 15px;">
-                <div id="clock" style="font-size: 1.4rem; font-weight: bold;">--:--</div>
-                <div style="font-size: 0.7rem; color: #aaa; text-align: right;">Updated:<br><span style="color:var(--disney-gold);">{{ last_updated }}</span></div>
+            <div style="font-size: 1.2rem; font-weight: bold; margin-bottom: 15px; display:flex; justify-content: space-between;">
+                <span>{{ last_updated }}</span>
+                <span style="color:var(--disney-gold);">FLORIDA</span>
             </div>
-            <div class="suggestion-tab" style="background: linear-gradient(135deg, #2c3e50, #003399); border: 2px solid var(--gemini-purple); padding: 15px; border-radius: 12px; margin-bottom: 15px;">
-                <div style="color: #d499ff; font-weight: bold; font-size: 0.9rem; margin-bottom: 8px;">✨ GEMINI LIVE GUIDE</div>
-                {% for tip in ai_tips %}<div style="font-size: 0.85rem; line-height: 1.4; margin-bottom: 10px;">{{ tip }}</div>{% endfor %}
+            
+            <div style="background: rgba(155, 89, 182, 0.2); border: 2px solid #9b59b6; padding: 12px; border-radius: 10px; margin-bottom: 20px;">
+                <div style="font-size: 0.8rem; font-weight: bold; color: #d499ff; margin-bottom: 5px;">✨ GEMINI LIVE ADVICE</div>
+                {% for tip in ai_tips %}<div style="font-size: 0.8rem; margin-bottom: 5px;">{{ tip }}</div>{% endfor %}
             </div>
-            <div style="color:var(--disney-gold); font-weight:bold; text-align:center; font-size:0.9rem; border-bottom:1px solid #ffcc00; margin-bottom:10px;">PARK HOURS</div>
-            {% for park, time in hours.items() %}<div style="font-size:0.8rem; margin-bottom:8px;"><b>{{ park }}</b><br><span style="color:#00ff00;">{{ time }}</span></div>{% endfor %}
+
+            <div style="font-weight:bold; color:var(--disney-gold); margin-bottom: 10px; border-bottom: 1px solid var(--disney-gold);">TAP TO VIEW ALL WAITS</div>
+            {% for park, time in hours.items() %}
+                <div class="clickable" onclick="openPark('{{ park }}')" style="margin-bottom: 12px; font-size: 0.85rem;">
+                    <b>{{ park }}</b><br><span style="color:#00ff00;">{{ time }}</span>
+                </div>
+            {% endfor %}
         </div>
         
         <div class="content">
             {% for ride in playlist %}
-            <div class="ride-spotlight" data-name="{{ ride.name.lower() }}" data-park="{{ ride.park }}">
-                <div onclick="openParkView('{{ ride.park }}')" style="color:var(--disney-gold); letter-spacing:4px; margin-bottom:10px; font-size:0.9rem; cursor:pointer; text-decoration: underline;">{{ ride.park | upper }}</div>
-                <div class="ride-title" style="font-size:2rem; font-weight:bold; margin-bottom:20px;">{{ ride.name }}</div>
+            <div class="ride-spotlight" data-park="{{ ride.park }}">
+                <div class="clickable" onclick="openPark('{{ ride.park }}')" style="color:var(--disney-gold); font-size:0.8rem; letter-spacing:3px; margin-bottom:10px;">{{ ride.park | upper }}</div>
+                <div style="font-size:1.8rem; font-weight:bold; margin-bottom:15px;">{{ ride.name }}</div>
                 {% if ride.status == "OPEN" %}
-                    <div style="opacity:0.7; font-size: 0.8rem;">CURRENT WAIT</div>
-                    {% set wait_color = '#00ff00' if ride.wait < 30 else ('#ffcc00' if ride.wait <= 60 else '#ff3333') %}
-                    <div style="font-size:5rem; font-weight:bold; color:{{ wait_color }};">{{ ride.wait }}</div>
-                    <div style="font-size:1.2rem; color:{{ wait_color }};">MINUTES</div>
+                    <div style="font-size:4rem; font-weight:bold; color:#00ff00;">{{ ride.wait }}</div>
+                    <div style="font-size:1rem; color:#00ff00;">MINUTES</div>
                 {% else %}
-                    <div style="font-size:3.5rem; color:var(--downtime-red); font-weight:bold;">DELAYED</div>
+                    <div style="font-size:3rem; font-weight:bold; color:var(--downtime-red);">DELAYED</div>
                 {% endif %}
             </div>
             {% endfor %}
         </div>
     </div>
 
-    <div id="parkModal">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h2 id="parkModalName" style="color:var(--disney-gold); margin:0;"></h2>
-            <button onclick="closeParkView()" style="background:var(--downtime-red); border:none; color:white; padding:10px 20px; border-radius:5px; font-weight:bold;">CLOSE</button>
+    <div id="parkOverlay">
+        <div class="park-title">
+            <span id="overlayName">PARK OVERVIEW</span>
+            <button onclick="closePark()" style="background:var(--downtime-red); color:white; border:none; padding:8px 15px; border-radius:5px; font-weight:bold;">CLOSE</button>
         </div>
-        <div id="parkRideList" class="park-grid"></div>
+        <div id="rideGrid" class="park-grid"></div>
     </div>
     
     <script>
         setTimeout(() => { window.location.reload(); }, 300000);
-        function updateClock() { document.getElementById('clock').innerText = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}); }
-        setInterval(updateClock, 1000); updateClock();
         
-        let currentIndex = 0; const spotlightCards = document.querySelectorAll('.ride-spotlight');
-        function cycleSpotlight() { 
-            if (document.getElementById('parkModal').style.display === 'block') return;
-            spotlightCards[currentIndex].classList.remove('active'); 
-            currentIndex = (currentIndex + 1) % spotlightCards.length; 
-            spotlightCards[currentIndex].classList.add('active'); 
+        let currentIdx = 0; 
+        const cards = document.querySelectorAll('.ride-spotlight');
+        function cycle() {
+            if (document.getElementById('parkOverlay').style.display === 'block') return;
+            cards[currentIdx].classList.remove('active');
+            currentIdx = (currentIdx + 1) % cards.length;
+            cards[currentIdx].classList.add('active');
         }
-        if (spotlightCards.length > 0) { spotlightCards[0].classList.add('active'); setInterval(cycleSpotlight, 7000); }
+        if (cards.length > 0) { cards[0].classList.add('active'); setInterval(cycle, 7000); }
 
-        function openParkView(parkName) {
-            const modal = document.getElementById('parkModal');
-            const list = document.getElementById('parkRideList');
-            document.getElementById('parkModalName').innerText = parkName.toUpperCase();
-            list.innerHTML = '';
+        function openPark(parkName) {
+            document.getElementById('overlayName').innerText = parkName.toUpperCase();
+            const grid = document.getElementById('rideGrid');
+            grid.innerHTML = '';
             
-            spotlightCards.forEach(card => {
-                if (card.getAttribute('data-park') === parkName) {
-                    const name = card.querySelector('.ride-title').innerText;
-                    const wait = card.querySelector('[style*="font-size:5rem"]') ? card.querySelector('[style*="font-size:5rem"]').innerText : "DOWN";
-                    const color = card.querySelector('[style*="font-size:5rem"]') ? card.querySelector('[style*="font-size:5rem"]').style.color : "var(--downtime-red)";
-                    
-                    const item = document.createElement('div');
-                    item.className = 'park-ride-item';
-                    item.innerHTML = `<span>${name}</span><b style="color:${color}">${wait} ${wait === 'DOWN' ? '' : 'MIN'}</b>`;
-                    list.appendChild(item);
-                }
+            // Build the list of rides for the selected park
+            const allRides = Array.from(cards).filter(c => c.dataset.park === parkName);
+            allRides.forEach(c => {
+                const name = c.querySelector('div:nth-child(2)').innerText;
+                const wait = c.querySelector('[style*="font-size:4rem"]') ? c.querySelector('[style*="font-size:4rem"]').innerText : "DOWN";
+                const row = document.createElement('div');
+                row.className = 'ride-row';
+                row.innerHTML = `<span>${name}</span><b style="color:${wait==='DOWN'?'#ff4444':'#00ff00'}">${wait} ${wait==='DOWN'?'':'MIN'}</b>`;
+                grid.appendChild(row);
             });
-            modal.style.display = 'block';
+            document.getElementById('parkOverlay').style.display = 'block';
         }
 
-        function closeParkView() { document.getElementById('parkModal').style.display = 'none'; }
+        function closePark() { document.getElementById('parkOverlay').style.display = 'none'; }
     </script>
 </body>
 </html>
 """
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
+    with app.app_context(): db.create_all()
     app.run(host='0.0.0.0', port=5001, debug=False)
