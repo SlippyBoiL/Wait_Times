@@ -1,0 +1,6 @@
+{
+  "name": "Disney & Universal Wait Times Dashboard",
+  "description": "Live Florida theme park wait times, ride spotlights, and smart guide algorithm for Walt Disney World and Universal Orlando.",
+  "permissions": [],
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

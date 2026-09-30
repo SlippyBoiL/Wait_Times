@@ -1,1 +1,54 @@
-This is just a simple disney wait times website that displays the waittimes of all the parks in Florida.
+# 🏰 Disney & Universal Wait Times Dashboard
+
+A comprehensive, real-time theme park intelligence dashboard and wait time predictor for **Walt Disney World** and **Universal Orlando Resort**.
+
+## 🌟 Key Features
+
+- **📱 Dedicated Phone GUI & iPad/Computer GUI**:
+  - Automatically adapts to mobile screens with a thumb-friendly bottom navigation bar (`Spotlight`, `Parks`, `Radar`, `Tools`).
+  - Seamless 1-tap switcher (`💻 IPAD GUI` / `📱 PHONE GUI`) to toggle between the 2-column iPad layout and the mobile layout on any device.
+- **🎯 Turnstile Ride Spotlight**:
+  - Live wait time display with giant luminous digits and real-time status.
+  - Interactive carousel controls (`◀ PREV`, `🎲 RANDOM`, `NEXT ▶`).
+  - Watchlist star and `+ LOG RIDE` / `RIDDEN ✓` trip tracking.
+  - Instant MOWD estimated recovery countdown if the attraction is down.
+- **🚨 MOWD Downtime & Reopen Radar**:
+  - Predictive uptime modeling based on vehicle dispatch cycles, reset telemetry, and historical recovery curves.
+  - Live countdown timers (`⏱ ~12m remaining`) and elapsed downtime telemetry.
+  - Reopen chime alerts (`🔔 WATCH REOPEN`) that play a fanfare chime when an attraction reboots to open.
+  - Golden Walk-on Window advisories (first ~8–12 min post-reopen before Lightning Lane backlogs accumulate).
+  - Accuracy confidence ratings based on mechanical archetype and empirical recovery logs.
+- **🏰 All 7 Florida Theme Parks**:
+  - Magic Kingdom, EPCOT, Disney's Hollywood Studios, Disney's Animal Kingdom.
+  - Universal Studios Florida, Universal's Islands of Adventure, and Universal's Epic Universe.
+  - Live operating hours, special event hours, average wait times, and operating ratios.
+- **🧭 Resort Command Tools**:
+  - **Smart Guide Algorithm**: Live queue analysis, optimal headliner deals, and walk-on recommendations.
+  - **Resort Crowd Meter**: Crowd density indices and park-by-park queue distributions.
+  - **Weather & Lightning Radar**: Real-time 10-mile lightning radius safety tracker and outdoor coaster halt monitor.
+  - **Morning Rope Drop Playbook**: Turnstile sprint blueprints and down-ride pivots for all 7 parks.
+  - **Park Hopper & Migration Advisor**: Live resort hopping resistance index.
+  - **Time Saved & Trip ROI**: Vacation dollar value calculator and ride conquest log.
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js (v18+)
+- npm or bun
+
+### Installation
+```bash
+npm install
+```
+
+### Development
+```bash
+npm run dev
+```
+The server will run at `http://localhost:3000`.
+
+### Production Build
+```bash
+npm run build
+npm start
+```

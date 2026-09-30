@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Disney & Universal Wait Times Dashboard</title>
+    <meta name="description" content="Live Florida theme park wait times, ride spotlights, and smart guide algorithm for Walt Disney World and Universal Orlando." />
+    <meta property="og:title" content="Disney & Universal Wait Times Dashboard" />
+    <meta property="og:description" content="Live Florida theme park wait times, ride spotlights, and smart guide algorithm for Walt Disney World and Universal Orlando." />
+    <style>
+      :root {
+        --disney-blue: #003399;
+        --disney-gold: #ffcc00;
+        --downtime-red: #ff4444;
+      }
+      html, body {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      body {
+        background: var(--disney-blue);
+        color: white;
+        font-family: 'Trebuchet MS', sans-serif;
+      }
+      #root {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+        min-height: 0;
+      }
+      .header {
+        background: var(--disney-gold);
+        color: var(--disney-blue);
+        padding: 8px 15px;
+        text-align: center;
+        font-weight: bold;
+        font-size: 1.1rem;
+        border-bottom: 2px solid white;
+        flex-shrink: 0;
+      }
+      .top-waits-bar {
+        background: rgba(0, 0, 0, 0.6);
+        padding: 4px 12px;
+        border-bottom: 2px solid var(--disney-gold);
+        font-size: 0.85rem;
+        overflow: hidden;
+        white-space: nowrap;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+        box-sizing: border-box;
+      }
+      .marquee-content {
+        display: inline-block;
+        animation: marquee 35s linear infinite;
+        line-height: 1;
+      }
+      @keyframes marquee {
+        0% { transform: translateX(100%); }
+        100% { transform: translateX(-100%); }
+      }
+      .marquee-item {
+        margin-right: 40px;
+      }
+      .main {
+        display: flex;
+        flex-direction: row;
+        flex: 1;
+        min-height: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      .sidebar {
+        width: 350px;
+        background: rgba(0, 40, 120, 0.95);
+        border-right: 4px solid var(--disney-gold);
+        padding: 10px 12px 60px 12px;
+        display: flex;
+        flex-direction: column;
+        overflow-y: scroll;
+        overflow-x: hidden;
+        height: 100%;
+        max-height: 100%;
+        min-height: 0;
+        box-sizing: border-box;
+        flex-shrink: 0;
+        gap: 6px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        scrollbar-color: var(--disney-gold) rgba(0, 20, 60, 0.5);
+      }
+      /* Custom scrollbar for sidebar */
+      .sidebar::-webkit-scrollbar {
+        width: 6px;
+      }
+      .sidebar::-webkit-scrollbar-track {
+        background: rgba(0, 20, 60, 0.5);
+      }
+      .sidebar::-webkit-scrollbar-thumb {
+        background: var(--disney-gold);
+        border-radius: 3px;
+      }
+      .park-card {
+        padding: 6px 10px;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 6px;
+        border: 1px solid rgba(255, 204, 0, 0.3);
+        cursor: pointer;
+        transition: transform 0.15s, background 0.15s, border-color 0.15s;
+        box-sizing: border-box;
+      }
+      .park-card:hover {
+        background: rgba(255, 204, 0, 0.15);
+        border-color: var(--disney-gold);
+        transform: translateY(-1px);
+      }
+      .parks-nav-strip {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        padding: 6px 12px;
+        background: rgba(0, 25, 75, 0.9);
+        border-bottom: 2px solid var(--disney-gold);
+        flex-shrink: 0;
+        -webkit-overflow-scrolling: touch;
+      }
+      .parks-nav-strip::-webkit-scrollbar {
+        height: 5px;
+      }
+      .parks-nav-strip::-webkit-scrollbar-thumb {
+        background: var(--disney-gold);
+        border-radius: 3px;
+      }
+      .park-chip {
+        display: flex;
+        flex-direction: column;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid var(--disney-gold);
+        padding: 4px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        white-space: nowrap;
+        font-family: inherit;
+        color: white;
+        transition: 0.15s;
+        text-align: left;
+        flex-shrink: 0;
+      }
+      .park-chip:hover {
+        background: rgba(255, 204, 0, 0.2);
+      }
+      .park-chip.active {
+        background: var(--disney-gold);
+        color: var(--disney-blue);
+      }
+      .park-chip.active .chip-hours {
+        color: #002266;
+      }
+      .chip-title {
+        font-weight: bold;
+        font-size: 0.8rem;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .chip-hours {
+        font-size: 0.68rem;
+        color: #00ff00;
+        margin-top: 1px;
+      }
+      .mobile-view-tabs {
+        display: none;
+      }
+      .content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background: radial-gradient(circle, #0044bb 0%, #001133 100%);
+        position: relative;
+        overflow-y: auto;
+        height: 100%;
+        max-height: 100%;
+        min-height: 0;
+        padding: 20px;
+        box-sizing: border-box;
+        -webkit-overflow-scrolling: touch;
+      }
+      .ride-spotlight {
+        width: 90%;
+        max-width: 520px;
+        padding: 24px 20px;
+        border-radius: 28px;
+        background: rgba(255, 255, 255, 0.12);
+        border: 4px solid var(--disney-gold);
+        text-align: center;
+        box-shadow: 0 0 50px rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(10px);
+        animation: slideIn 0.4s ease-out;
+        box-sizing: border-box;
+        margin: auto;
+        flex-shrink: 0;
+      }
+      @keyframes slideIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .clickable {
+        cursor: pointer;
+        transition: 0.3s;
+      }
+      .clickable:hover {
+        color: var(--disney-gold);
+        text-decoration: underline;
+      }
+      .algo-btn {
+        background: linear-gradient(135deg, #d4af37, #ffcc00);
+        color: #001133;
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+        font-weight: bold;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+        font-size: 1rem;
+        border: 2px solid white;
+        cursor: pointer;
+        user-select: none;
+      }
+      .algo-btn:hover {
+        opacity: 0.95;
+        transform: scale(1.02);
+      }
+      .overlay-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: var(--disney-blue);
+        z-index: 2000;
+        padding: 20px;
+        box-sizing: border-box;
+        overflow-y: auto;
+      }
+      .park-title {
+        color: var(--disney-gold);
+        border-bottom: 2px solid var(--disney-gold);
+        padding-bottom: 15px;
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .ride-row {
+        background: rgba(255, 255, 255, 0.08);
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-left: 5px solid var(--disney-gold);
+      }
+      .close-btn {
+        background: var(--downtime-red);
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-weight: bold;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 0.9rem;
+      }
+      .close-btn:hover {
+        opacity: 0.9;
+      }
+      .badge-open {
+        background: rgba(0, 255, 0, 0.2);
+        color: #00ff00;
+        border: 1px solid #00ff00;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        display: inline-block;
+      }
+      .badge-extra {
+        background: rgba(255, 204, 0, 0.2);
+        color: var(--disney-gold);
+        border: 1px solid var(--disney-gold);
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        display: inline-block;
+      }
+      .badge-closed {
+        background: rgba(255, 68, 68, 0.2);
+        color: #ff9999;
+        border: 1px solid #ff4444;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        display: inline-block;
+      }
+      .filter-btn {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid var(--disney-gold);
+        color: white;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        cursor: pointer;
+        font-family: inherit;
+        transition: 0.2s;
+      }
+      .filter-btn:hover {
+        background: rgba(255, 204, 0, 0.25);
+      }
+      .filter-btn.active {
+        background: var(--disney-gold);
+        color: var(--disney-blue);
+        font-weight: bold;
+      }
+      .search-input {
+        background: rgba(0, 20, 60, 0.8);
+        border: 1px solid var(--disney-gold);
+        color: white;
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-size: 0.95rem;
+        width: 100%;
+        box-sizing: border-box;
+        font-family: inherit;
+        outline: none;
+      }
+      .search-input:focus {
+        box-shadow: 0 0 8px var(--disney-gold);
+      }
+      .star-btn {
+        background: none;
+        border: none;
+        font-size: 1.3rem;
+        cursor: pointer;
+        color: var(--disney-gold);
+        line-height: 1;
+        padding: 4px;
+        transition: transform 0.2s;
+      }
+      .star-btn:hover {
+        transform: scale(1.25);
+      }
+      .stat-card {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid var(--disney-gold);
+        padding: 12px;
+        border-radius: 10px;
+        text-align: center;
+      }
+      .category-chip {
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 204, 0, 0.5);
+        color: white;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition: 0.2s;
+        font-family: inherit;
+      }
+      .category-chip:hover {
+        border-color: var(--disney-gold);
+        background: rgba(255, 204, 0, 0.2);
+      }
+      .category-chip.active {
+        background: var(--disney-gold);
+        color: var(--disney-blue);
+        border-color: var(--disney-gold);
+        font-weight: bold;
+      }
+      .check-btn {
+        background: rgba(0, 255, 0, 0.1);
+        border: 1px solid #00ff00;
+        color: #00ff00;
+        padding: 4px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.75rem;
+        font-weight: bold;
+        font-family: inherit;
+        transition: 0.2s;
+      }
+      .check-btn:hover {
+        background: #00ff00;
+        color: #002200;
+      }
+      .check-btn.checked {
+        background: #00ff00;
+        color: #002200;
+      }
+      .crowd-meter-bar {
+        background: rgba(0, 0, 0, 0.4);
+        border-radius: 10px;
+        height: 10px;
+        overflow: hidden;
+        border: 1px solid var(--disney-gold);
+        margin: 6px 0;
+      }
+      .crowd-meter-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #00ff00, #ffcc00, #ff4444);
+        transition: width 0.5s ease;
+      }
+      /* DEDICATED PHONE GUI STYLES */
+      .phone-container {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        height: 100%;
+        overflow: hidden;
+        position: relative;
+        background: radial-gradient(circle at 50% 30%, #0044bb 0%, #001133 100%);
+      }
+      .phone-tab-content {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 12px 10px calc(80px + env(safe-area-inset-bottom, 0px)) 10px;
+        box-sizing: border-box;
+      }
+      .phone-tab-content::-webkit-scrollbar {
+        width: 5px;
+      }
+      .phone-tab-content::-webkit-scrollbar-thumb {
+        background: var(--disney-gold);
+        border-radius: 3px;
+      }
+      .phone-bottom-nav {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: calc(60px + env(safe-area-inset-bottom, 0px));
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        background: rgba(0, 15, 45, 0.98);
+        border-top: 2px solid var(--disney-gold);
+        display: flex;
+        justify-content: space-around;
+        align-items: stretch;
+        z-index: 1200;
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(12px);
+        box-sizing: border-box;
+      }
+      .phone-nav-item {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background: transparent;
+        border: none;
+        color: #ccd9ff;
+        font-family: inherit;
+        font-size: 0.72rem;
+        font-weight: bold;
+        cursor: pointer;
+        padding: 4px 2px;
+        transition: all 0.2s;
+        text-align: center;
+        position: relative;
+        touch-action: manipulation;
+      }
+      .phone-nav-item.active {
+        color: var(--disney-gold);
+        background: rgba(255, 204, 0, 0.12);
+      }
+      .phone-nav-item.active::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 20%;
+        right: 20%;
+        height: 3px;
+        background: var(--disney-gold);
+        border-radius: 0 0 3px 3px;
+      }
+      .phone-nav-icon {
+        font-size: 1.25rem;
+        line-height: 1;
+        margin-bottom: 3px;
+      }
+      .phone-tool-card {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid var(--disney-gold);
+        border-radius: 12px;
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        transition: transform 0.15s, background 0.15s;
+        margin-bottom: 10px;
+      }
+      .phone-tool-card:active {
+        transform: scale(0.98);
+        background: rgba(255, 204, 0, 0.2);
+      }
+      .device-toggle-btn {
+        background: rgba(0, 30, 90, 0.85);
+        color: var(--disney-gold);
+        border: 1px solid var(--disney-gold);
+        padding: 4px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.76rem;
+        font-weight: bold;
+        font-family: inherit;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        transition: 0.2s;
+      }
+      .device-toggle-btn:hover {
+        background: var(--disney-gold);
+        color: var(--disney-blue);
+      }
+
+      @media (max-width: 800px) {
+        .header {
+          padding: 6px 10px;
+          font-size: 0.95rem;
+        }
+        .ride-spotlight {
+          width: 96%;
+          padding: 18px 12px;
+          border-radius: 20px;
+          margin: 6px auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
