@@ -2,26 +2,32 @@
 
 This guide explains how to run the **Disney & Universal Wait Times Dashboard** server inside a Proxmox VE container.
 
-You can run it in two ways depending on your Proxmox setup:
-- **Option 1 (Recommended)**: Native Debian/Ubuntu LXC Container (Uses only ~100MB RAM, fastest performance, no Docker overhead).
-- **Option 2**: Docker / Docker Compose (Ideal if you run a Docker LXC or Portainer on Proxmox).
+---
+
+## ⚡ Option 1: 1-Command Automated LXC Creation (Run on Proxmox Host)
+
+If you are at the Proxmox Node Shell (e.g. `root@proxmox:~#` as seen in the Proxmox Web GUI under **pve > Shell**):
+
+Paste and run this single command:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/SlippyBoiL/Wait_Times/main/create-proxmox-lxc.sh)"
+```
+
+### What this command does automatically:
+1. Detects your Proxmox storage pools (`local`, `local-lvm`, `local-zfs`, etc.).
+2. Finds or downloads the official `debian-12-standard` template.
+3. Automatically selects the next available Container ID (e.g. `200` or `101`).
+4. Creates a lightweight, unprivileged LXC container (`wait-times`) with 2 cores, 1024MB RAM, and 8GB disk.
+5. Boots the container and provisions Node.js 20 LTS, git, and build tools.
+6. Clones the repository, compiles the production dashboard, and registers `wait-times.service` to start on boot.
+7. Prints your container's IP address and direct dashboard link!
 
 ---
 
-## 🚀 Option 1: Native Proxmox LXC Container (Recommended)
+## 🚀 Option 2: Setup inside an Existing LXC Container
 
-### Step 1: Create an LXC Container in Proxmox
-1. In the Proxmox Web GUI, click **Create CT**.
-2. **General**: Give it a CT ID (e.g. `200`) and hostname (e.g. `wait-times`). Check `Unprivileged container` (leave nested virtualization unchecked).
-3. **Template**: Choose `debian-12-standard` (or `ubuntu-24.04-standard`).
-4. **Disks**: 8 GB is plenty.
-5. **CPU**: 1–2 cores.
-6. **Memory**: 512 MB – 1024 MB RAM, 512 MB swap.
-7. **Network**: DHCP (or assign a static IP like `192.168.1.150/24` with your gateway).
-8. Click **Finish** and start the container.
-
-### Step 2: Run the 1-Line Setup
-Open the **Console** of your new LXC container in Proxmox and run:
+If you already created an LXC container and are inside its console:
 
 ```bash
 apt-get update && apt-get install -y curl ca-certificates git

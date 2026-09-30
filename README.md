@@ -55,17 +55,21 @@ npm start
 
 ## 🖥️ Running on Proxmox VE Container
 
-You can run the dashboard in Proxmox in either a **native LXC Container** (recommended: ~100MB RAM) or via **Docker**:
+### ⚡ 1-Command Automated Proxmox LXC Builder (Run on Proxmox Host)
+Run this single command directly in your Proxmox VE host shell (**Node > Shell**, e.g. `root@proxmox:~#`):
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/SlippyBoiL/Wait_Times/main/create-proxmox-lxc.sh)"
+```
+This automatically downloads the Debian 12 template, provisions the LXC container with 2 cores / 1GB RAM, installs Node.js, compiles the dashboard, sets up auto-start on boot, and provides your direct web URL!
 
-### Option A: Native Proxmox LXC Container (1-Liner)
-Inside a Debian 12 or Ubuntu LXC container console:
+### Option B: Setup inside an Existing LXC Container
+Inside an existing Debian 12 or Ubuntu LXC container console:
 ```bash
 apt-get update && apt-get install -y curl ca-certificates git
 curl -fsSL https://raw.githubusercontent.com/SlippyBoiL/Wait_Times/main/proxmox-lxc-setup.sh | bash
 ```
-This automatically installs Node.js, compiles the app, and registers a `systemd` service (`wait-times.service`) that restarts automatically on container boot.
 
-### Option B: Docker / Docker Compose
+### Option C: Docker / Docker Compose
 ```bash
 docker compose up -d --build
 ```

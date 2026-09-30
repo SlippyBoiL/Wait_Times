@@ -25,12 +25,14 @@ echo "✓ Node.js $(node -v) and npm $(npm -v) verified."
 # 3. Destination directory
 INSTALL_DIR="/opt/wait-times"
 
-if [ -d "$INSTALL_DIR" ]; then
+if [ -d "$INSTALL_DIR/.git" ]; then
     echo "📁 Updating existing repository in $INSTALL_DIR..."
     cd "$INSTALL_DIR"
+    git reset --hard HEAD || true
     git pull || true
 else
-    echo "📁 Cloning repository to $INSTALL_DIR..."
+    echo "📁 Fresh clone of repository to $INSTALL_DIR..."
+    rm -rf "$INSTALL_DIR"
     git clone https://github.com/SlippyBoiL/Wait_Times.git "$INSTALL_DIR"
     cd "$INSTALL_DIR"
 fi
