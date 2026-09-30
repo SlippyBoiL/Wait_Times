@@ -10,7 +10,7 @@ ExecStart=/usr/bin/npm start
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
-Environment=PORT=3000
+Environment=PORT=5001
 
 # Standard output and error logging to journald
 StandardOutput=journal

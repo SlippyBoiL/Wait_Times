@@ -530,17 +530,20 @@ async function startServer() {
     console.log(`  ➜  Network: http://0.0.0.0:${PORT}/`);
   });
 
-  // Also bind to port 5000 (original Flask port for Cloudflare tunnel access)
-  if (PORT !== 5000) {
-    try {
-      const tunnelServer = app.listen(5000, '0.0.0.0', () => {
-        console.log(`Cloudflare Tunnel Support: Also listening on http://0.0.0.0:5000`);
-      });
-      tunnelServer.on('error', (err: any) => {
-        console.warn('Port 5000 notice:', err.message);
-      });
-    } catch (err: any) {
-      console.warn('Unable to bind port 5000:', err.message);
+  // Also bind to port 5001, 5000, and 3000 (Cloudflare tunnel support)
+  const additionalPorts = [5001, 5000, 3000];
+  for (const altPort of additionalPorts) {
+    if (Number(PORT) !== altPort) {
+      try {
+        const altServer = app.listen(altPort, '0.0.0.0', () => {
+          console.log(`Cloudflare Tunnel Support: Also listening on http://0.0.0.0:${altPort}`);
+        });
+        altServer.on('error', (err: any) => {
+          console.warn(`Port ${altPort} notice:`, err.message);
+        });
+      } catch (err: any) {
+        console.warn(`Unable to bind port ${altPort}:`, err.message);
+      }
     }
   }
 }
