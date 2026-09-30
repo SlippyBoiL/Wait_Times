@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,6 +35,30 @@ app.get('/api/health', (_req: Request, res: Response) => {
     parksTracked: 7,
     environment: process.env.NODE_ENV || 'development'
   });
+});
+
+// GitHub Webhook for instant auto-deployments on push
+app.all(['/api/webhook/deploy', '/api/webhook/github'], (req: Request, res: Response) => {
+  if (req.headers['x-github-event'] === 'ping') {
+    return res.json({ message: 'GitHub webhook ping received successfully!' });
+  }
+
+  console.log('🔄 Deployment webhook triggered. Launching update in background...');
+  res.json({
+    status: 'updating',
+    message: 'Update sequence started. Pulling latest code, rebuilding, and restarting service.',
+    timestamp: new Date().toISOString()
+  });
+
+  try {
+    const updater = spawn('/bin/bash', ['/opt/wait-times/update.sh', '--force'], {
+      detached: true,
+      stdio: 'ignore'
+    });
+    updater.unref();
+  } catch (err: any) {
+    console.error('Failed to launch update.sh:', err);
+  }
 });
 
 // Map of 7 Orlando Theme Parks to their ThemeParks.wiki Entity UUIDs

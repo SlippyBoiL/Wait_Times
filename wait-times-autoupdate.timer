@@ -1,0 +1,11 @@
+[Unit]
+Description=Check and auto-update Disney Wait Times every 2 minutes
+After=network.target
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+Unit=wait-times-autoupdate.service
+
+[Install]
+WantedBy=timers.target

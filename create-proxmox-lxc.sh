@@ -159,11 +159,15 @@ echo "   [4/5] Building production dashboard..."
 npm install
 npm run build
 
-echo "   [5/5] Configuring auto-start service..."
+echo "   [5/5] Configuring auto-start and auto-update services..."
+chmod +x /opt/wait-times/update.sh
 cp /opt/wait-times/wait-times.service /etc/systemd/system/wait-times.service
+cp /opt/wait-times/wait-times-autoupdate.service /etc/systemd/system/wait-times-autoupdate.service
+cp /opt/wait-times/wait-times-autoupdate.timer /etc/systemd/system/wait-times-autoupdate.timer
 systemctl daemon-reload
 systemctl enable wait-times.service
 systemctl restart wait-times.service
+systemctl enable --now wait-times-autoupdate.timer
 '
 
 # 8. Retrieve Container IP
