@@ -4,8 +4,6 @@
 # Run this directly on your Proxmox VE Host Shell (root@proxmox:~#)
 # ==============================================================================
 
-# Note: Do NOT use set -e or pipefail here because grep queries in pipelines return 1 on no match!
-
 # ANSI Colors
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
@@ -65,7 +63,7 @@ echo "   • Template Storage: $TEMPLATE_STORAGE"
 echo "   • Container Storage: $ROOTFS_STORAGE"
 
 # 4. Check for Debian 12 Template or Download It
-echo -e "${YELLOW}📦 Checking for LXC template...${NC}"
+echo -e "${YELLOW}📦 Checking for LXC template in $TEMPLATE_STORAGE...${NC}"
 
 # Look for an existing downloaded template
 TEMPLATE_VOLID=$(pvesm list "$TEMPLATE_STORAGE" -content vztmpl 2>/dev/null | awk '{print $1}' | grep -i "debian-12" | head -n 1 || true)
@@ -86,7 +84,7 @@ if [ -z "$TEMPLATE_VOLID" ]; then
     fi
     
     if [ -z "$DOWNLOAD_TARGET" ]; then
-        echo -e "${RED}❌ Could not find an available Debian/Ubuntu template to download.${NC}"
+        echo -e "${RED}❌ Could not find an available Debian/Ubuntu template in pveam.${NC}"
         echo "Please download a Debian 12 template manually in Proxmox (local > CT Templates) and re-run."
         exit 1
     fi
@@ -114,7 +112,7 @@ pct create "$CTID" "$TEMPLATE_VOLID" \
     --onboot 1
 
 if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Failed to create container $CTID. Please check the storage and settings above.${NC}"
+    echo -e "${RED}❌ Failed to create container $CTID. Please check the storage settings.${NC}"
     exit 1
 fi
 
@@ -124,20 +122,13 @@ pct start "$CTID"
 
 # 6. Wait for Network Inside Container
 echo -e "${YELLOW}⏳ Waiting for network inside container...${NC}"
-CONNECTED=0
 for i in {1..30}; do
-    if pct exec "$CTID" -- ping -c 1 -W 1 1.1.1.1 >/dev/null 2>&1; then
-        CONNECTED=1
+    if pct exec "$CTID" -- ip route get 1.1.1.1 >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ Container network connected.${NC}"
         break
     fi
     sleep 1
 done
-
-if [ $CONNECTED -eq 1 ]; then
-    echo -e "${GREEN}✓ Network connected.${NC}"
-else
-    echo -e "${YELLOW}⚠️ Notice: Network ping timed out, proceeding with package update...${NC}"
-fi
 
 # 7. Provision Node.js and Dashboard Inside the Container
 echo -e "${YELLOW}🚀 Installing dependencies and building Disney & Universal dashboard...${NC}"
@@ -146,7 +137,7 @@ pct exec "$CTID" -- bash -c '
 set -e
 export DEBIAN_FRONTEND=noninteractive
 
-echo "   [1/5] Updating apt packages..."
+echo "   [1/5] Updating packages..."
 apt-get update -qq
 apt-get install -y -qq curl git ca-certificates gnupg
 
@@ -168,18 +159,25 @@ echo "   [4/5] Building production dashboard..."
 npm install
 npm run build
 
-echo "   [5/5] Configuring systemd service..."
-cp wait-times.service /etc/systemd/system/wait-times.service
+echo "   [5/5] Configuring auto-start service..."
+cp /opt/wait-times/wait-times.service /etc/systemd/system/wait-times.service
 systemctl daemon-reload
 systemctl enable wait-times.service
 systemctl restart wait-times.service
 '
 
 # 8. Retrieve Container IP
-CONTAINER_IP=$(pct exec "$CTID" -- ip -4 -br addr show eth0 2>/dev/null | awk '{print $3}' | cut -d/ -f1 || true)
-if [ -z "$CONTAINER_IP" ]; then
-    CONTAINER_IP=$(pct exec "$CTID" -- hostname -I 2>/dev/null | awk '{print $1}' || true)
-fi
+CONTAINER_IP=""
+for i in {1..10}; do
+    CONTAINER_IP=$(pct exec "$CTID" -- ip -4 -br addr show eth0 2>/dev/null | awk '{print $3}' | cut -d/ -f1 || true)
+    if [ -z "$CONTAINER_IP" ]; then
+        CONTAINER_IP=$(pct exec "$CTID" -- hostname -I 2>/dev/null | awk '{print $1}' || true)
+    fi
+    if [ -n "$CONTAINER_IP" ]; then
+        break
+    fi
+    sleep 1
+done
 
 echo ""
 echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════════════════${NC}"
