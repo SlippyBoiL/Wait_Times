@@ -1,0 +1,25 @@
+services:
+  wait-times:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wait-times-dashboard:latest
+    container_name: wait-times-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

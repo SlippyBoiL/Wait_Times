@@ -9,6 +9,10 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 function getPort(): number {
+  if (process.env.PORT) {
+    const p = parseInt(process.env.PORT, 10);
+    if (!isNaN(p)) return p;
+  }
   const portIdx = process.argv.indexOf('--port');
   if (portIdx !== -1 && process.argv[portIdx + 1]) {
     return parseInt(process.argv[portIdx + 1], 10);
@@ -20,6 +24,17 @@ const PORT = getPort();
 
 app.use(cors());
 app.use(express.json());
+
+// Container & Reverse Proxy Healthcheck
+app.get('/api/health', (_req: Request, res: Response) => {
+  res.json({
+    status: 'ok',
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    parksTracked: 7,
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
 
 // Map of 7 Orlando Theme Parks to their ThemeParks.wiki Entity UUIDs
 export const THEMEPARK_MAP: Record<string, string> = {

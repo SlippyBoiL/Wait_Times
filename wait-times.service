@@ -1,0 +1,21 @@
+[Unit]
+Description=Disney & Universal Wait Times Dashboard Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/wait-times
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+# Standard output and error logging to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wait-times-dashboard
+
+[Install]
+WantedBy=multi-user.target

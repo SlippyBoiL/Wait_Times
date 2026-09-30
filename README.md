@@ -52,3 +52,22 @@ The server will run at `http://localhost:3000`.
 npm run build
 npm start
 ```
+
+## 🖥️ Running on Proxmox VE Container
+
+You can run the dashboard in Proxmox in either a **native LXC Container** (recommended: ~100MB RAM) or via **Docker**:
+
+### Option A: Native Proxmox LXC Container (1-Liner)
+Inside a Debian 12 or Ubuntu LXC container console:
+```bash
+apt-get update && apt-get install -y curl ca-certificates git
+curl -fsSL https://raw.githubusercontent.com/SlippyBoiL/Wait_Times/main/proxmox-lxc-setup.sh | bash
+```
+This automatically installs Node.js, compiles the app, and registers a `systemd` service (`wait-times.service`) that restarts automatically on container boot.
+
+### Option B: Docker / Docker Compose
+```bash
+docker compose up -d --build
+```
+Access at `http://<PROXMOX_IP>:3000`. Full guide available in [PROXMOX.md](./PROXMOX.md).
+
