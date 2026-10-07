@@ -48,6 +48,18 @@ export interface RideDowntimeHistory {
   totalDowntimesToday: number;
   avgRecoveryMinutesToday?: number;
   lastRecoveryMinutes?: number;
+  // Disk Audit Log Fields
+  logFilePath?: string;
+  logFileName?: string;
+  allTimeIncidentsTotal?: number;
+  allTimeAvgRecoveryMinutes?: number;
+  allTimeMedianRecoveryMinutes?: number;
+  shortestRecoveryMinutes?: number;
+  longestRecoveryMinutes?: number;
+  reliabilityScore?: number;
+  recentLogLines?: string[];
+  lastDownTimeStr?: string;
+  lastUpTimeStr?: string;
 }
 
 export interface WaitData {
@@ -405,6 +417,12 @@ interface MOWDPrediction {
   pastDurations: number[];
   avgPastRecovery?: number;
   extendedDelay: boolean;
+  // Audit log metadata
+  allTimeCount?: number;
+  allTimeAvg?: number;
+  reliabilityScore?: number;
+  logFileName?: string;
+  logFilePath?: string;
 }
 
 function computeMOWDUptime(rideName: string, history?: RideDowntimeHistory): MOWDPrediction {
@@ -465,21 +483,33 @@ function computeMOWDUptime(rideName: string, history?: RideDowntimeHistory): MOW
     reopenAdvantage = 'MODERATE';
   }
 
-  // 1. Incorporate historical downtime occurrences and recovery times from today
+  // 1. Incorporate empirical disk audit logs and observed recovery times
   const pastDurations = history?.incidentsToday?.map((i) => i.durationMinutes).filter((d): d is number => typeof d === 'number' && d > 0) || [];
   let totalCycleMinutes = baseMinutes;
   let historyNote = '';
   let avgPastRecovery: number | undefined = undefined;
 
-  if (pastDurations.length > 0) {
+  const allTimeAvg = history?.allTimeAvgRecoveryMinutes;
+  const allTimeCount = history?.allTimeIncidentsTotal || 0;
+
+  if (pastDurations.length > 0 && allTimeAvg) {
     avgPastRecovery = Math.round(pastDurations.reduce((a, b) => a + b, 0) / pastDurations.length);
-    // Weighted algorithm: 65% weight on today's actual observed recoveries, 35% on mechanical archetype baseline
+    // Empirical multi-layer weighting: 55% today's file logs, 35% all-time file logs, 10% archetype baseline
+    totalCycleMinutes = Math.round((avgPastRecovery * 0.55) + (allTimeAvg * 0.35) + (baseMinutes * 0.10));
+    confidence = Math.min(96, Math.round(confidence + 12 + Math.min(8, allTimeCount)));
+    historyNote = `Trained on ${allTimeCount} audit log file incident(s) (All-time avg: ${allTimeAvg}m • Today avg: ${avgPastRecovery}m)`;
+  } else if (allTimeAvg && allTimeCount > 0) {
+    // 75% all-time file log average, 25% mechanical archetype baseline
+    totalCycleMinutes = Math.round((allTimeAvg * 0.75) + (baseMinutes * 0.25));
+    confidence = Math.min(94, Math.round(confidence + 10 + Math.min(6, allTimeCount)));
+    historyNote = `Trained on ${allTimeCount} persistent disk log breakdown(s) (Historical avg: ${allTimeAvg}m)`;
+  } else if (pastDurations.length > 0) {
+    avgPastRecovery = Math.round(pastDurations.reduce((a, b) => a + b, 0) / pastDurations.length);
     totalCycleMinutes = Math.round((avgPastRecovery * 0.65) + (baseMinutes * 0.35));
-    // Boost confidence score since real empirical data for today is available
-    confidence = Math.min(94, Math.round(confidence + 10 + Math.min(8, pastDurations.length * 2)));
-    historyNote = `Trained on ${pastDurations.length} past recovery event(s) today (Avg: ${avgPastRecovery}m, Last: ${pastDurations[pastDurations.length - 1]}m)`;
+    confidence = Math.min(92, Math.round(confidence + 8 + Math.min(8, pastDurations.length * 2)));
+    historyNote = `Trained on ${pastDurations.length} recovery event(s) today (Avg: ${avgPastRecovery}m)`;
   } else {
-    historyNote = `Baseline mechanical profile (0 prior downtimes today)`;
+    historyNote = `Baseline mechanical profile (Awaiting initial disk downtime audit log)`;
   }
 
   // 2. Factor in current elapsed downtime
@@ -489,7 +519,6 @@ function computeMOWDUptime(rideName: string, history?: RideDowntimeHistory): MOW
 
   if (elapsedMinutes >= totalCycleMinutes) {
     extendedDelay = true;
-    // When downtime exceeds typical recovery, adjust for extended reset
     remainingMinutes = Math.max(4, Math.round(elapsedMinutes * 0.3));
     confidence = Math.max(65, confidence - 7);
   }
@@ -516,6 +545,11 @@ function computeMOWDUptime(rideName: string, history?: RideDowntimeHistory): MOW
     pastDurations,
     avgPastRecovery,
     extendedDelay,
+    allTimeCount,
+    allTimeAvg,
+    reliabilityScore: history?.reliabilityScore,
+    logFileName: history?.logFileName,
+    logFilePath: history?.logFilePath,
   };
 }
 
@@ -621,6 +655,28 @@ export default function App() {
 
   // Downtime radar & MOWD predictor state
   const [radarParkFilter, setRadarParkFilter] = useState<string>('ALL');
+
+  // Dedicated Ride Audit Log file viewer state
+  const [auditLogModalRide, setAuditLogModalRide] = useState<{ park: string; ride: string } | null>(null);
+  const [auditLogData, setAuditLogData] = useState<any | null>(null);
+  const [auditLogLoading, setAuditLogLoading] = useState(false);
+  const [auditLogCopied, setAuditLogCopied] = useState(false);
+
+  const openRideAuditLog = async (park: string, ride: string) => {
+    setAuditLogModalRide({ park, ride });
+    setAuditLogLoading(true);
+    setAuditLogCopied(false);
+    setAuditLogData(null);
+    try {
+      const res = await fetch(`/api/rides/log?park=${encodeURIComponent(park)}&ride=${encodeURIComponent(ride)}`);
+      const json = await res.json();
+      setAuditLogData(json);
+    } catch (err) {
+      console.error('Failed to load ride audit log:', err);
+    } finally {
+      setAuditLogLoading(false);
+    }
+  };
 
   // Device & Phone GUI state
   const [deviceMode, setDeviceMode] = useState<'AUTO' | 'PHONE' | 'IPAD'>(() => {
@@ -1417,7 +1473,7 @@ export default function App() {
                 </div>
 
                 {/* Quick Action Buttons */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', gap: '5px' }}>
                   <button
                     onClick={() => jumpToRide(ride.name, ride.park)}
                     style={{
@@ -1426,8 +1482,8 @@ export default function App() {
                       color: 'var(--disney-gold)',
                       border: '1px solid var(--disney-gold)',
                       borderRadius: '5px',
-                      padding: '3px 6px',
-                      fontSize: '0.68rem',
+                      padding: '3px 4px',
+                      fontSize: '0.66rem',
                       fontWeight: 'bold',
                       cursor: 'pointer',
                       fontFamily: 'inherit',
@@ -1436,22 +1492,40 @@ export default function App() {
                     🎯 SPOTLIGHT
                   </button>
                   <button
+                    onClick={() => openRideAuditLog(ride.park, ride.name)}
+                    style={{
+                      flex: 1.1,
+                      background: 'rgba(255, 204, 0, 0.15)',
+                      color: 'var(--disney-gold)',
+                      border: '1px solid var(--disney-gold)',
+                      borderRadius: '5px',
+                      padding: '3px 4px',
+                      fontSize: '0.66rem',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                    title="View persistent downtime and recovery disk text log"
+                  >
+                    📄 AUDIT LOG
+                  </button>
+                  <button
                     onClick={() => toggleWatchedReopen(ride.name)}
                     style={{
-                      flex: 1.2,
-                      background: isWatching ? '#00ff00' : 'rgba(255, 204, 0, 0.15)',
-                      color: isWatching ? '#002200' : 'var(--disney-gold)',
-                      border: isWatching ? '1px solid #00ff00' : '1px solid var(--disney-gold)',
+                      flex: 1.1,
+                      background: isWatching ? '#00ff00' : 'rgba(255, 255, 255, 0.08)',
+                      color: isWatching ? '#002200' : '#ccc',
+                      border: isWatching ? '1px solid #00ff00' : '1px solid #666',
                       borderRadius: '5px',
-                      padding: '3px 6px',
-                      fontSize: '0.68rem',
+                      padding: '3px 4px',
+                      fontSize: '0.66rem',
                       fontWeight: 'bold',
                       cursor: 'pointer',
                       fontFamily: 'inherit',
                     }}
                     title="Get notified with a fanfare chime when this attraction reopens"
                   >
-                    {isWatching ? '🔔 WATCHING ✓' : '+ WATCH REOPEN'}
+                    {isWatching ? '🔔 WATCHING ✓' : '+ WATCH'}
                   </button>
                 </div>
               </div>
@@ -3233,6 +3307,221 @@ export default function App() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* RIDE DOWNTIME & RECOVERY DISK AUDIT LOG MODAL */}
+      {auditLogModalRide && (
+        <div className="overlay-modal" style={{ zIndex: 9999 }}>
+          <div className="park-title">
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '1.35rem', fontWeight: 'bold', color: 'white' }}>
+                  📄 {auditLogModalRide.ride.toUpperCase()}
+                </span>
+                <span style={{ fontSize: '0.72rem', background: 'rgba(0, 30, 90, 0.85)', color: 'var(--disney-gold)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--disney-gold)', fontWeight: 'bold' }}>
+                  {auditLogModalRide.park}
+                </span>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#ccc', marginTop: '4px' }}>
+                Dedicated Persistent Text Log & Machine Learning Uptime Training Data
+              </div>
+            </div>
+            <button className="close-btn" onClick={() => setAuditLogModalRide(null)}>
+              CLOSE
+            </button>
+          </div>
+
+          {auditLogLoading ? (
+            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--disney-gold)', fontSize: '1.1rem' }}>
+              ⚡ Reading persistent log file from disk...
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* File Info Bar */}
+              <div
+                style={{
+                  background: 'rgba(0, 20, 60, 0.75)',
+                  border: '1px solid var(--disney-gold)',
+                  borderRadius: '10px',
+                  padding: '12px 16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '8px',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Active Disk File Path
+                  </div>
+                  <code style={{ fontSize: '0.82rem', color: '#00ff00', background: 'rgba(0, 0, 0, 0.4)', padding: '2px 6px', borderRadius: '4px' }}>
+                    {auditLogData?.filePath || auditLogData?.stats?.logFilePath || 'logs/rides/'}
+                  </code>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.76rem', color: '#ddd' }}>
+                    Size: <b>{auditLogData?.stats?.fileSizeBytes ? `${auditLogData.stats.fileSizeBytes} B` : 'Active'}</b>
+                  </span>
+                  <button
+                    onClick={() => {
+                      if (auditLogData?.rawContent) {
+                        navigator.clipboard.writeText(auditLogData.rawContent);
+                        setAuditLogCopied(true);
+                        setTimeout(() => setAuditLogCopied(false), 2000);
+                      }
+                    }}
+                    style={{
+                      background: auditLogCopied ? '#00ff00' : 'rgba(255, 204, 0, 0.15)',
+                      color: auditLogCopied ? '#002200' : 'var(--disney-gold)',
+                      border: '1px solid var(--disney-gold)',
+                      borderRadius: '6px',
+                      padding: '4px 10px',
+                      fontSize: '0.75rem',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    {auditLogCopied ? '✓ COPIED!' : '📋 COPY LOG FILE'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Statistics Grid */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                  gap: '10px',
+                }}
+              >
+                <div className="stat-card" style={{ padding: '12px' }}>
+                  <div style={{ fontSize: '0.68rem', color: '#ccc' }}>SYSTEM RELIABILITY</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#00ff00', marginTop: '2px' }}>
+                    {auditLogData?.stats?.reliabilityScore || 95}%
+                  </div>
+                  <div style={{ fontSize: '0.62rem', color: '#aaa', marginTop: '2px' }}>Operational uptime</div>
+                </div>
+
+                <div className="stat-card" style={{ padding: '12px' }}>
+                  <div style={{ fontSize: '0.68rem', color: '#ccc' }}>TOTAL BREAKDOWNS</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--disney-gold)', marginTop: '2px' }}>
+                    {auditLogData?.stats?.allTimeTotalIncidents || 0}
+                  </div>
+                  <div style={{ fontSize: '0.62rem', color: '#aaa', marginTop: '2px' }}>Logged in file history</div>
+                </div>
+
+                <div className="stat-card" style={{ padding: '12px' }}>
+                  <div style={{ fontSize: '0.68rem', color: '#ccc' }}>HISTORICAL AVG RECOVERY</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#66ccff', marginTop: '2px' }}>
+                    {auditLogData?.stats?.allTimeAvgDuration ? `~${auditLogData.stats.allTimeAvgDuration}m` : '--'}
+                  </div>
+                  <div style={{ fontSize: '0.62rem', color: '#aaa', marginTop: '2px' }}>Median: ~{auditLogData?.stats?.allTimeMedianDuration || '--'}m</div>
+                </div>
+
+                <div className="stat-card" style={{ padding: '12px' }}>
+                  <div style={{ fontSize: '0.68rem', color: '#ccc' }}>TODAY'S INCIDENTS</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: (auditLogData?.stats?.todayTotalIncidents || 0) > 0 ? 'var(--downtime-red)' : '#00ff00', marginTop: '2px' }}>
+                    {auditLogData?.stats?.todayTotalIncidents || 0}
+                  </div>
+                  <div style={{ fontSize: '0.62rem', color: '#aaa', marginTop: '2px' }}>
+                    {auditLogData?.stats?.todayAvgDuration ? `Avg ${auditLogData.stats.todayAvgDuration}m today` : '0 downtimes today'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Recorded Breakdown Incidents */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 204, 0, 0.3)', borderRadius: '10px', padding: '14px' }}>
+                <b style={{ color: 'var(--disney-gold)', fontSize: '0.9rem' }}>
+                  📜 VERIFIED BREAKDOWN & RECOVERY AUDIT EVENTS:
+                </b>
+                <div style={{ fontSize: '0.72rem', color: '#bbb', marginTop: '2px', marginBottom: '10px' }}>
+                  Every downtime start and recovery timestamp is permanently appended here to calculate the reopen algorithm.
+                </div>
+
+                {auditLogData?.stats?.allTimeIncidents?.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                    {auditLogData.stats.allTimeIncidents.map((inc: any, idx: number) => (
+                      <div
+                        key={idx}
+                        style={{
+                          background: 'rgba(0, 0, 0, 0.45)',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          borderLeft: '4px solid #00ff00',
+                          borderRadius: '6px',
+                          padding: '8px 12px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: '6px',
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#00ff00' }}>
+                              ✓ RECOVERED
+                            </span>
+                            <span style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold' }}>
+                              📅 {inc.date}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: '#ccc', marginTop: '2px' }}>
+                            Down: <b style={{ color: '#ff7777' }}>{inc.downTimeStr || 'Recorded'}</b> ➔ Restored: <b style={{ color: '#88ff88' }}>{inc.upTimeStr || 'Recorded'}</b>
+                          </div>
+                        </div>
+
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ background: 'rgba(255, 204, 0, 0.2)', color: 'var(--disney-gold)', border: '1px solid var(--disney-gold)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.74rem', fontWeight: 'bold' }}>
+                            ⏱ {inc.durationMinutes} mins down
+                          </span>
+                          {inc.waitAtReopen !== undefined && (
+                            <div style={{ fontSize: '0.68rem', color: '#aaa', marginTop: '2px' }}>
+                              Reopened wait: {inc.waitAtReopen}m
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: '12px', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '6px', fontSize: '0.78rem', color: '#aaa', textAlign: 'center' }}>
+                    ✨ No breakdown incidents recorded yet in this ride's file. The audit logger will write entries immediately when downtime occurs.
+                  </div>
+                )}
+              </div>
+
+              {/* Raw Text Log File Viewer */}
+              <div style={{ background: 'rgba(0, 0, 0, 0.65)', border: '1px solid #444', borderRadius: '10px', padding: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <b style={{ color: '#fff', fontSize: '0.8rem', fontFamily: 'monospace' }}>
+                    📁 RAW FILE CONTENT: {auditLogData?.fileName || 'log.txt'}
+                  </b>
+                  <span style={{ fontSize: '0.7rem', color: '#00ff00' }}>● Synchronized with Linux filesystem</span>
+                </div>
+                <pre
+                  style={{
+                    background: '#0d1117',
+                    color: '#c9d1d9',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    fontSize: '0.72rem',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    maxHeight: '180px',
+                    overflowY: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: '1.4',
+                    border: '1px solid #30363d',
+                  }}
+                >
+                  {auditLogData?.rawContent || '# Initializing log...'}
+                </pre>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </>

@@ -1,8 +1,18 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
+import {
+  logDowntimeStart,
+  logDowntimeRecovery,
+  getRideLogStats,
+  seedBaselineLogsIfEmpty,
+  LOGS_DIR,
+  getRideLogFilePath,
+  formatOrlandoDate,
+} from './src/rideLogger.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -139,6 +149,18 @@ export interface RideDowntimeHistory {
   totalDowntimesToday: number;
   avgRecoveryMinutesToday?: number;
   lastRecoveryMinutes?: number;
+  // Dedicated Disk Audit Log Fields
+  logFilePath?: string;
+  logFileName?: string;
+  allTimeIncidentsTotal?: number;
+  allTimeAvgRecoveryMinutes?: number;
+  allTimeMedianRecoveryMinutes?: number;
+  shortestRecoveryMinutes?: number;
+  longestRecoveryMinutes?: number;
+  reliabilityScore?: number;
+  recentLogLines?: string[];
+  lastDownTimeStr?: string;
+  lastUpTimeStr?: string;
 }
 
 interface InternalDowntimeEntry {
@@ -410,8 +432,8 @@ async function fetchAllParkData() {
             delayedRides.push(rideUnit);
           }
 
-          // Track Downtime Incident History for MOWD Predictor
-          const trackerKey = attr.name;
+          // Track Downtime Incident History for MOWD Predictor & File Logging
+          const trackerKey = `${parkName}::${attr.name}`;
           let tracker = downtimeTracker.get(trackerKey);
           if (!tracker) {
             tracker = { incidents: [] };
@@ -424,13 +446,18 @@ async function fetchAllParkData() {
           if (status === "TEMPORARILY_CLOSED") {
             if (!tracker.currentDownSince) {
               tracker.currentDownSince = prevStatus === "OPEN" ? nowMs : nowMs - (18 * 60 * 1000);
+              // Write downtime event to dedicated ride text file log
+              logDowntimeStart(parkName, attr.name, new Date(tracker.currentDownSince), 'Temporarily Closed');
             }
           } else if (status === "OPEN") {
             if (prevStatus === "TEMPORARILY_CLOSED" && tracker.currentDownSince) {
-              const recoveryDuration = Math.max(1, Math.round((nowMs - tracker.currentDownSince) / 60000));
+              const downDate = new Date(tracker.currentDownSince);
+              const upDate = new Date(nowMs);
+              // Write recovery and duration event to dedicated ride text file log
+              const { durationMinutes: recoveryDuration } = logDowntimeRecovery(parkName, attr.name, downDate, upDate, wait);
               tracker.incidents.push({
-                downAt: new Date(tracker.currentDownSince).toISOString(),
-                upAt: new Date(nowMs).toISOString(),
+                downAt: downDate.toISOString(),
+                upAt: upDate.toISOString(),
                 durationMinutes: recoveryDuration,
               });
               tracker.currentDownSince = undefined;
@@ -443,13 +470,27 @@ async function fetchAllParkData() {
             ? Math.max(1, Math.round((nowMs - tracker.currentDownSince) / 60000))
             : 0;
 
-          const validDurations = tracker.incidents
-            .map((i) => i.durationMinutes)
-            .filter((d): d is number => typeof d === "number" && d > 0);
-          const avgRecoveryMinutesToday = validDurations.length > 0
-            ? Math.round(validDurations.reduce((a, b) => a + b, 0) / validDurations.length)
-            : undefined;
-          const lastRecoveryMinutes = validDurations.length > 0 ? validDurations[validDurations.length - 1] : undefined;
+          // Retrieve empirical stats from this ride's dedicated log file
+          const logStats = getRideLogStats(parkName, attr.name);
+
+          // Combined calculations using empirical file logs + in-memory
+          const validDurations = [
+            ...tracker.incidents.map((i) => i.durationMinutes).filter((d): d is number => typeof d === "number" && d > 0),
+            ...(logStats.todayIncidents.map((i) => i.durationMinutes).filter((d): d is number => typeof d === "number" && d > 0))
+          ];
+          const uniqueDurations = Array.from(new Set(validDurations));
+
+          const avgRecoveryMinutesToday = uniqueDurations.length > 0
+            ? Math.round(uniqueDurations.reduce((a, b) => a + b, 0) / uniqueDurations.length)
+            : logStats.todayAvgDuration || logStats.allTimeAvgDuration;
+
+          const lastRecoveryMinutes = uniqueDurations.length > 0
+            ? uniqueDurations[uniqueDurations.length - 1]
+            : (logStats.allTimeIncidents.length > 0 ? logStats.allTimeIncidents[logStats.allTimeIncidents.length - 1].durationMinutes : undefined);
+
+          const lastDownDate = tracker.currentDownSince
+            ? formatOrlandoDate(new Date(tracker.currentDownSince))
+            : (logStats.todayIncidents.length > 0 ? { dateStr: logStats.todayIncidents[logStats.todayIncidents.length - 1].date, timeStr: logStats.todayIncidents[logStats.todayIncidents.length - 1].downTimeStr } : undefined);
 
           downtimeHistoryMap[attr.name] = {
             ride_name: attr.name,
@@ -461,6 +502,18 @@ async function fetchAllParkData() {
             totalDowntimesToday: tracker.incidents.length + (isCurrentlyDown ? 1 : 0),
             avgRecoveryMinutesToday,
             lastRecoveryMinutes,
+            // Dedicated Disk Audit Log Fields
+            logFilePath: logStats.logFilePath,
+            logFileName: logStats.fileName,
+            allTimeIncidentsTotal: logStats.allTimeTotalIncidents,
+            allTimeAvgRecoveryMinutes: logStats.allTimeAvgDuration,
+            allTimeMedianRecoveryMinutes: logStats.allTimeMedianDuration,
+            shortestRecoveryMinutes: logStats.shortestDuration,
+            longestRecoveryMinutes: logStats.longestDuration,
+            reliabilityScore: logStats.reliabilityScore,
+            recentLogLines: logStats.recentLogLines,
+            lastDownTimeStr: lastDownDate?.timeStr,
+            lastUpTimeStr: logStats.todayIncidents.length > 0 ? logStats.todayIncidents[logStats.todayIncidents.length - 1].upTimeStr : undefined,
           };
 
           waitHistory.push({
@@ -531,8 +584,63 @@ app.get('/api/history', (_req: Request, res: Response) => {
   res.json({ total: waitHistory.length, recent: waitHistory.slice(-50) });
 });
 
+// API Route to fetch raw audit log file & stats for a specific ride
+app.get('/api/rides/log', (req: Request, res: Response) => {
+  const parkName = (req.query.park as string) || '';
+  const rideName = (req.query.ride as string) || '';
+  if (!rideName) {
+    return res.status(400).json({ error: 'Missing ride parameter' });
+  }
+
+  const filePath = getRideLogFilePath(parkName, rideName);
+  const stats = getRideLogStats(parkName, rideName);
+  let rawContent = '';
+  if (fs.existsSync(filePath)) {
+    rawContent = fs.readFileSync(filePath, 'utf8');
+  }
+
+  res.json({
+    parkName,
+    rideName,
+    filePath,
+    fileName: stats.fileName,
+    stats,
+    rawContent,
+  });
+});
+
+// API Route to list all generated ride log files on disk
+app.get('/api/logs/all', (_req: Request, res: Response) => {
+  try {
+    if (!fs.existsSync(LOGS_DIR)) {
+      return res.json({ logsDir: LOGS_DIR, totalFiles: 0, files: [] });
+    }
+    const fileNames = fs.readdirSync(LOGS_DIR).filter((f) => f.endsWith('.txt') || f.endsWith('.log'));
+    const files = fileNames.map((fileName) => {
+      const fullPath = path.join(LOGS_DIR, fileName);
+      const stat = fs.statSync(fullPath);
+      return {
+        fileName,
+        sizeBytes: stat.size,
+        lastModified: stat.mtime.toISOString(),
+      };
+    });
+    res.json({ logsDir: LOGS_DIR, totalFiles: files.length, files });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list log files' });
+  }
+});
+
 // Setup Vite middleware for development or serve dist for production
 async function startServer() {
+  // Initialize baseline empirical logs if empty so algorithm has immediate statistical training data
+  try {
+    seedBaselineLogsIfEmpty();
+    console.log(`[RideLogger] Dedicated ride audit log directory active: ${LOGS_DIR}`);
+  } catch (err) {
+    console.warn('[RideLogger] Notice seeding baseline logs:', (err as Error).message);
+  }
+
   const isProd = process.env.NODE_ENV === 'production';
 
   if (!isProd) {
