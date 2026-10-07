@@ -656,27 +656,44 @@ export default function App() {
   // Downtime radar & MOWD predictor state
   const [radarParkFilter, setRadarParkFilter] = useState<string>('ALL');
 
-  // Dedicated Ride Audit Log file viewer state
-  const [auditLogModalRide, setAuditLogModalRide] = useState<{ park: string; ride: string } | null>(null);
-  const [auditLogData, setAuditLogData] = useState<any | null>(null);
-  const [auditLogLoading, setAuditLogLoading] = useState(false);
-  const [auditLogCopied, setAuditLogCopied] = useState(false);
+  // Dedicated Live Ride Logs Explorer state
+  const [allLogsModalOpen, setAllLogsModalOpen] = useState(false);
+  const [logsSearchQuery, setLogsSearchQuery] = useState('');
+  const [logsParkFilter, setLogsParkFilter] = useState('ALL');
+  const [logsStatusFilter, setLogsStatusFilter] = useState<'ALL' | 'DOWN_ONLY' | 'HAS_HISTORY'>('ALL');
+  const [selectedLogRide, setSelectedLogRide] = useState<{ park: string; ride: string } | null>(null);
+  const [liveLogData, setLiveLogData] = useState<any | null>(null);
+  const [liveLogLoading, setLiveLogLoading] = useState(false);
+  const [liveLogCopied, setLiveLogCopied] = useState(false);
+  const [autoRefreshLogs, setAutoRefreshLogs] = useState(false);
 
-  const openRideAuditLog = async (park: string, ride: string) => {
-    setAuditLogModalRide({ park, ride });
-    setAuditLogLoading(true);
-    setAuditLogCopied(false);
-    setAuditLogData(null);
+  const fetchSelectedRideLog = async (park: string, ride: string) => {
+    setLiveLogLoading(true);
+    setLiveLogCopied(false);
     try {
       const res = await fetch(`/api/rides/log?park=${encodeURIComponent(park)}&ride=${encodeURIComponent(ride)}`);
       const json = await res.json();
-      setAuditLogData(json);
+      setLiveLogData(json);
     } catch (err) {
       console.error('Failed to load ride audit log:', err);
     } finally {
-      setAuditLogLoading(false);
+      setLiveLogLoading(false);
     }
   };
+
+  const openRideAuditLog = (park: string, ride: string) => {
+    setSelectedLogRide({ park, ride });
+    setAllLogsModalOpen(true);
+    fetchSelectedRideLog(park, ride);
+  };
+
+  useEffect(() => {
+    if (!allLogsModalOpen || !selectedLogRide || !autoRefreshLogs) return;
+    const interval = setInterval(() => {
+      fetchSelectedRideLog(selectedLogRide.park, selectedLogRide.ride);
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [allLogsModalOpen, selectedLogRide, autoRefreshLogs]);
 
   // Device & Phone GUI state
   const [deviceMode, setDeviceMode] = useState<'AUTO' | 'PHONE' | 'IPAD'>(() => {
@@ -1190,7 +1207,7 @@ export default function App() {
           </button>
         </div>
 
-        <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'center', gap: '10px' }}>
+        <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <button
             className="filter-btn"
             onClick={() => {
@@ -1200,6 +1217,14 @@ export default function App() {
             style={{ fontSize: '0.85rem', padding: '8px 16px', fontWeight: 'bold' }}
           >
             Explore All {currentRide.park} Waits
+          </button>
+          <button
+            className="filter-btn"
+            onClick={() => openRideAuditLog(currentRide.park, currentRide.name)}
+            style={{ fontSize: '0.85rem', padding: '8px 16px', fontWeight: 'bold', color: '#00ffff', borderColor: '#00ffff' }}
+            title="Inspect live persistent text log for this attraction"
+          >
+            📄 Live Ride Log
           </button>
         </div>
       </div>
@@ -1628,6 +1653,26 @@ export default function App() {
         RESORT COMMAND TOOLS & ADVISORIES
       </div>
 
+      <div
+        className="phone-tool-card"
+        onClick={() => {
+          if (!selectedLogRide && data?.playlist?.length) {
+            const first = data.delayed_rides?.[0] || data.playlist[0];
+            setSelectedLogRide({ park: first.park, ride: first.name });
+            fetchSelectedRideLog(first.park, first.name);
+          }
+          setAllLogsModalOpen(true);
+        }}
+      >
+        <div>
+          <b style={{ color: '#00ffff', fontSize: '0.92rem' }}>📄 Live Ride Logs Explorer</b>
+          <div style={{ fontSize: '0.72rem', color: '#ccc', marginTop: '2px' }}>
+            Browse and inspect individual downtime & recovery text files for all 140+ attractions
+          </div>
+        </div>
+        <span style={{ color: '#00ffff', fontSize: '1.2rem' }}>→</span>
+      </div>
+
       <div className="phone-tool-card" onClick={openAlgorithm}>
         <div>
           <b style={{ color: 'var(--disney-gold)', fontSize: '0.92rem' }}>🎯 Smart Guide Algorithm</b>
@@ -1724,7 +1769,31 @@ export default function App() {
                 onClick={toggleDeviceMode}
                 title="Switch to iPad / Desktop layout"
               >
-                💻 IPAD GUI
+                💻 IPAD
+              </button>
+              <button
+                onClick={() => {
+                  if (!selectedLogRide && data?.playlist?.length) {
+                    const first = data.delayed_rides?.[0] || data.playlist[0];
+                    setSelectedLogRide({ park: first.park, ride: first.name });
+                    fetchSelectedRideLog(first.park, first.name);
+                  }
+                  setAllLogsModalOpen(true);
+                }}
+                style={{
+                  background: 'rgba(0, 40, 80, 0.9)',
+                  color: '#00ffff',
+                  border: '1px solid #00ffff',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.74rem',
+                  fontWeight: 'bold',
+                  fontFamily: 'inherit',
+                }}
+                title="View live text logs for all rides"
+              >
+                📄 LOGS
               </button>
               <button
                 onClick={toggleSound}
@@ -1768,6 +1837,30 @@ export default function App() {
                 title="Toggle to Phone GUI layout"
               >
                 📱 PHONE GUI
+              </button>
+              <button
+                onClick={() => {
+                  if (!selectedLogRide && data?.playlist?.length) {
+                    const first = data.delayed_rides?.[0] || data.playlist[0];
+                    setSelectedLogRide({ park: first.park, ride: first.name });
+                    fetchSelectedRideLog(first.park, first.name);
+                  }
+                  setAllLogsModalOpen(true);
+                }}
+                style={{
+                  background: 'rgba(0, 40, 80, 0.9)',
+                  color: '#00ffff',
+                  border: '1px solid #00ffff',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.76rem',
+                  fontWeight: 'bold',
+                  fontFamily: 'inherit',
+                }}
+                title="Explore live persistent text log files for each ride"
+              >
+                📄 LIVE LOGS
               </button>
               <button
                 onClick={() => setCrowdModalOpen(true)}
@@ -2431,7 +2524,26 @@ export default function App() {
                         {ride.name}
                       </span>
                     </div>
-                    {statusLabel}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        onClick={() => openRideAuditLog(ride.park, ride.name)}
+                        style={{
+                          background: 'rgba(0, 30, 90, 0.8)',
+                          color: '#00ffff',
+                          border: '1px solid #00ffff',
+                          padding: '3px 8px',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem',
+                          fontWeight: 'bold',
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                        title="View live downtime text log for this ride"
+                      >
+                        📄 Log
+                      </button>
+                      {statusLabel}
+                    </div>
                   </div>
                 );
               })
@@ -3310,218 +3422,496 @@ export default function App() {
         </div>
       )}
 
-      {/* RIDE DOWNTIME & RECOVERY DISK AUDIT LOG MODAL */}
-      {auditLogModalRide && (
-        <div className="overlay-modal" style={{ zIndex: 9999 }}>
-          <div className="park-title">
+      {/* LIVE RIDE LOGS EXPLORER MODAL (ALL 7 PARKS & INDIVIDUAL ATTRACTIONS) */}
+      {allLogsModalOpen && (
+        <div className="overlay-modal" style={{ zIndex: 9999, maxWidth: '1200px', width: '96%', padding: '16px' }}>
+          {/* Modal Header */}
+          <div className="park-title" style={{ marginBottom: '12px', paddingBottom: '12px' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '1.35rem', fontWeight: 'bold', color: 'white' }}>
-                  📄 {auditLogModalRide.ride.toUpperCase()}
+                <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: 'white' }}>
+                  📄 LIVE RIDE LOGS EXPLORER
                 </span>
-                <span style={{ fontSize: '0.72rem', background: 'rgba(0, 30, 90, 0.85)', color: 'var(--disney-gold)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--disney-gold)', fontWeight: 'bold' }}>
-                  {auditLogModalRide.park}
+                <span style={{ fontSize: '0.74rem', background: 'rgba(0, 255, 255, 0.15)', color: '#00ffff', border: '1px solid #00ffff', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
+                  ALL 7 PARKS
                 </span>
               </div>
-              <div style={{ fontSize: '0.8rem', color: '#ccc', marginTop: '4px' }}>
-                Dedicated Persistent Text Log & Machine Learning Uptime Training Data
+              <div style={{ fontSize: '0.8rem', color: '#ccc', marginTop: '2px' }}>
+                Direct real-time inspection of individual ride downtime audit files & ML recovery training curves
               </div>
             </div>
-            <button className="close-btn" onClick={() => setAuditLogModalRide(null)}>
-              CLOSE
-            </button>
+
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                onClick={() => setAutoRefreshLogs((prev) => !prev)}
+                style={{
+                  background: autoRefreshLogs ? '#00ff00' : 'rgba(0, 30, 90, 0.8)',
+                  color: autoRefreshLogs ? '#002200' : 'var(--disney-gold)',
+                  border: autoRefreshLogs ? '1px solid #00ff00' : '1px solid var(--disney-gold)',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  fontSize: '0.74rem',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                }}
+                title="Automatically refresh log contents every 8 seconds"
+              >
+                <span>{autoRefreshLogs ? '🟢' : '⚪'}</span>
+                <span>{autoRefreshLogs ? 'AUTO-POLL ON (8s)' : 'AUTO-POLL OFF'}</span>
+              </button>
+
+              <button className="close-btn" onClick={() => setAllLogsModalOpen(false)}>
+                CLOSE
+              </button>
+            </div>
           </div>
 
-          {auditLogLoading ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--disney-gold)', fontSize: '1.1rem' }}>
-              ⚡ Reading persistent log file from disk...
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* File Info Bar */}
-              <div
-                style={{
-                  background: 'rgba(0, 20, 60, 0.75)',
-                  border: '1px solid var(--disney-gold)',
-                  borderRadius: '10px',
-                  padding: '12px 16px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '8px',
-                }}
+          {/* Park Filter Tabs */}
+          <div
+            style={{
+              display: 'flex',
+              gap: '6px',
+              overflowX: 'auto',
+              paddingBottom: '6px',
+              marginBottom: '10px',
+              WebkitOverflowScrolling: 'touch',
+            }}
+          >
+            <button
+              className={`filter-btn ${logsParkFilter === 'ALL' ? 'active' : ''}`}
+              onClick={() => setLogsParkFilter('ALL')}
+              style={{ fontSize: '0.72rem', padding: '4px 10px', whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              ALL 7 PARKS
+            </button>
+            {PARK_NAMES.map((p) => {
+              let label = p;
+              if (p === 'Universal Studios Florida') label = 'Universal';
+              else if (p === 'Islands of Adventure') label = 'Islands';
+              else if (p === 'Hollywood Studios') label = 'Hollywood';
+              else if (p === 'Animal Kingdom') label = 'Animal';
+              else if (p === 'Magic Kingdom') label = 'Magic';
+              return (
+                <button
+                  key={p}
+                  className={`filter-btn ${logsParkFilter === p ? 'active' : ''}`}
+                  onClick={() => setLogsParkFilter(p)}
+                  style={{ fontSize: '0.72rem', padding: '4px 10px', whiteSpace: 'nowrap', flexShrink: 0 }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search & Status Filters */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '14px' }}>
+            <input
+              type="text"
+              className="search-input"
+              placeholder="🔍 Search attractions (e.g. Space Mountain, VelociCoaster, Hagrid)..."
+              value={logsSearchQuery}
+              onChange={(e) => setLogsSearchQuery(e.target.value)}
+              style={{ flex: 1, minWidth: '220px', padding: '6px 12px', fontSize: '0.85rem' }}
+            />
+
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                className={`filter-btn ${logsStatusFilter === 'ALL' ? 'active' : ''}`}
+                onClick={() => setLogsStatusFilter('ALL')}
+                style={{ fontSize: '0.72rem', padding: '4px 10px' }}
               >
-                <div>
-                  <div style={{ fontSize: '0.72rem', color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Active Disk File Path
-                  </div>
-                  <code style={{ fontSize: '0.82rem', color: '#00ff00', background: 'rgba(0, 0, 0, 0.4)', padding: '2px 6px', borderRadius: '4px' }}>
-                    {auditLogData?.filePath || auditLogData?.stats?.logFilePath || 'logs/rides/'}
-                  </code>
-                </div>
+                All Rides
+              </button>
+              <button
+                className={`filter-btn ${logsStatusFilter === 'DOWN_ONLY' ? 'active' : ''}`}
+                onClick={() => setLogsStatusFilter('DOWN_ONLY')}
+                style={{ fontSize: '0.72rem', padding: '4px 10px', color: logsStatusFilter === 'DOWN_ONLY' ? undefined : 'var(--downtime-red)' }}
+              >
+                🚨 Down Now
+              </button>
+              <button
+                className={`filter-btn ${logsStatusFilter === 'HAS_HISTORY' ? 'active' : ''}`}
+                onClick={() => setLogsStatusFilter('HAS_HISTORY')}
+                style={{ fontSize: '0.72rem', padding: '4px 10px', color: logsStatusFilter === 'HAS_HISTORY' ? undefined : '#00ffff' }}
+              >
+                📜 Has Outage History
+              </button>
+            </div>
+          </div>
 
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.76rem', color: '#ddd' }}>
-                    Size: <b>{auditLogData?.stats?.fileSizeBytes ? `${auditLogData.stats.fileSizeBytes} B` : 'Active'}</b>
-                  </span>
-                  <button
-                    onClick={() => {
-                      if (auditLogData?.rawContent) {
-                        navigator.clipboard.writeText(auditLogData.rawContent);
-                        setAuditLogCopied(true);
-                        setTimeout(() => setAuditLogCopied(false), 2000);
-                      }
-                    }}
-                    style={{
-                      background: auditLogCopied ? '#00ff00' : 'rgba(255, 204, 0, 0.15)',
-                      color: auditLogCopied ? '#002200' : 'var(--disney-gold)',
-                      border: '1px solid var(--disney-gold)',
-                      borderRadius: '6px',
-                      padding: '4px 10px',
-                      fontSize: '0.75rem',
-                      fontWeight: 'bold',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    {auditLogCopied ? '✓ COPIED!' : '📋 COPY LOG FILE'}
-                  </button>
-                </div>
-              </div>
+          {/* Dual-Pane Directory & Log Terminal */}
+          {(() => {
+            const allRides = data?.playlist || [];
+            const filteredRides = allRides.filter((r) => {
+              if (logsParkFilter !== 'ALL' && r.park !== logsParkFilter) return false;
+              if (logsSearchQuery.trim()) {
+                const q = logsSearchQuery.toLowerCase();
+                if (!r.name.toLowerCase().includes(q) && !r.park.toLowerCase().includes(q)) return false;
+              }
+              if (logsStatusFilter === 'DOWN_ONLY' && r.status !== 'TEMPORARILY_CLOSED') return false;
+              if (logsStatusFilter === 'HAS_HISTORY') {
+                const hist = data?.downtime_history?.[r.name];
+                if (!hist || ((hist.totalDowntimesToday || 0) === 0 && (hist.allTimeIncidentsTotal || 0) === 0)) return false;
+              }
+              return true;
+            });
 
-              {/* Statistics Grid */}
+            const activeRide = selectedLogRide || (filteredRides.length > 0 ? { park: filteredRides[0].park, ride: filteredRides[0].name } : null);
+
+            return (
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-                  gap: '10px',
+                  gridTemplateColumns: isMobileWidth ? '1fr' : '320px 1fr',
+                  gap: '12px',
+                  minHeight: '440px',
+                  maxHeight: '68vh',
+                  overflow: 'hidden',
                 }}
               >
-                <div className="stat-card" style={{ padding: '12px' }}>
-                  <div style={{ fontSize: '0.68rem', color: '#ccc' }}>SYSTEM RELIABILITY</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#00ff00', marginTop: '2px' }}>
-                    {auditLogData?.stats?.reliabilityScore || 95}%
+                {/* Left Pane: Attraction Directory */}
+                <div
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.4)',
+                    border: '1px solid rgba(255, 204, 0, 0.3)',
+                    borderRadius: '10px',
+                    padding: '8px',
+                    overflowY: 'auto',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                    maxHeight: isMobileWidth ? '180px' : '100%',
+                  }}
+                >
+                  <div style={{ fontSize: '0.72rem', color: 'var(--disney-gold)', fontWeight: 'bold', padding: '2px 4px' }}>
+                    ATTRACTIONS ({filteredRides.length})
                   </div>
-                  <div style={{ fontSize: '0.62rem', color: '#aaa', marginTop: '2px' }}>Operational uptime</div>
+
+                  {filteredRides.length === 0 ? (
+                    <div style={{ color: '#aaa', fontSize: '0.78rem', textAlign: 'center', padding: '20px' }}>
+                      No attractions found.
+                    </div>
+                  ) : (
+                    filteredRides.map((ride) => {
+                      const isSelected = activeRide?.name === ride.name && activeRide?.park === ride.park;
+                      const hist = data?.downtime_history?.[ride.name];
+                      const isDown = ride.status === 'TEMPORARILY_CLOSED';
+
+                      return (
+                        <div
+                          key={`${ride.park}-${ride.name}`}
+                          onClick={() => {
+                            setSelectedLogRide({ park: ride.park, ride: ride.name });
+                            fetchSelectedRideLog(ride.park, ride.name);
+                          }}
+                          style={{
+                            background: isSelected ? 'rgba(0, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                            border: isSelected ? '1px solid #00ffff' : '1px solid rgba(255, 255, 255, 0.1)',
+                            borderLeft: isDown ? '4px solid var(--downtime-red)' : isSelected ? '4px solid #00ffff' : '4px solid #00ff00',
+                            borderRadius: '6px',
+                            padding: '6px 8px',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ fontSize: '0.64rem', color: '#aaa', fontWeight: 'bold' }}>
+                              {ride.park.toUpperCase()}
+                            </div>
+                            {isDown ? (
+                              <span style={{ fontSize: '0.6rem', color: 'var(--downtime-red)', fontWeight: 'bold' }}>
+                                ● DOWN NOW
+                              </span>
+                            ) : ride.status === 'OPEN' ? (
+                              <span style={{ fontSize: '0.62rem', color: '#00ff00', fontWeight: 'bold' }}>
+                                {ride.wait} MIN
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.6rem', color: '#aaa' }}>CLOSED</span>
+                            )}
+                          </div>
+
+                          <b style={{ fontSize: '0.78rem', color: isSelected ? '#00ffff' : '#fff', display: 'block', marginTop: '1px', lineHeight: '1.2' }}>
+                            {ride.name}
+                          </b>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '3px', fontSize: '0.62rem', color: '#888' }}>
+                            <span>
+                              {hist && (hist.allTimeIncidentsTotal || hist.totalDowntimesToday) ? (
+                                <span style={{ color: 'var(--disney-gold)' }}>
+                                  📜 {hist.allTimeIncidentsTotal || hist.totalDowntimesToday} outages logged
+                                </span>
+                              ) : (
+                                <span>✨ Nominal</span>
+                              )}
+                            </span>
+                            <span style={{ color: '#00ff00' }}>
+                              {hist?.reliabilityScore ? `${hist.reliabilityScore}% Up` : '96% Up'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
 
-                <div className="stat-card" style={{ padding: '12px' }}>
-                  <div style={{ fontSize: '0.68rem', color: '#ccc' }}>TOTAL BREAKDOWNS</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--disney-gold)', marginTop: '2px' }}>
-                    {auditLogData?.stats?.allTimeTotalIncidents || 0}
-                  </div>
-                  <div style={{ fontSize: '0.62rem', color: '#aaa', marginTop: '2px' }}>Logged in file history</div>
-                </div>
-
-                <div className="stat-card" style={{ padding: '12px' }}>
-                  <div style={{ fontSize: '0.68rem', color: '#ccc' }}>HISTORICAL AVG RECOVERY</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#66ccff', marginTop: '2px' }}>
-                    {auditLogData?.stats?.allTimeAvgDuration ? `~${auditLogData.stats.allTimeAvgDuration}m` : '--'}
-                  </div>
-                  <div style={{ fontSize: '0.62rem', color: '#aaa', marginTop: '2px' }}>Median: ~{auditLogData?.stats?.allTimeMedianDuration || '--'}m</div>
-                </div>
-
-                <div className="stat-card" style={{ padding: '12px' }}>
-                  <div style={{ fontSize: '0.68rem', color: '#ccc' }}>TODAY'S INCIDENTS</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: (auditLogData?.stats?.todayTotalIncidents || 0) > 0 ? 'var(--downtime-red)' : '#00ff00', marginTop: '2px' }}>
-                    {auditLogData?.stats?.todayTotalIncidents || 0}
-                  </div>
-                  <div style={{ fontSize: '0.62rem', color: '#aaa', marginTop: '2px' }}>
-                    {auditLogData?.stats?.todayAvgDuration ? `Avg ${auditLogData.stats.todayAvgDuration}m today` : '0 downtimes today'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Recorded Breakdown Incidents */}
-              <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 204, 0, 0.3)', borderRadius: '10px', padding: '14px' }}>
-                <b style={{ color: 'var(--disney-gold)', fontSize: '0.9rem' }}>
-                  📜 VERIFIED BREAKDOWN & RECOVERY AUDIT EVENTS:
-                </b>
-                <div style={{ fontSize: '0.72rem', color: '#bbb', marginTop: '2px', marginBottom: '10px' }}>
-                  Every downtime start and recovery timestamp is permanently appended here to calculate the reopen algorithm.
-                </div>
-
-                {auditLogData?.stats?.allTimeIncidents?.length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
-                    {auditLogData.stats.allTimeIncidents.map((inc: any, idx: number) => (
+                {/* Right Pane: Selected Ride Active Live Log Terminal & History */}
+                <div
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.65)',
+                    border: '1px solid rgba(0, 255, 255, 0.4)',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    overflowY: 'auto',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                  }}
+                >
+                  {liveLogLoading && !liveLogData ? (
+                    <div style={{ textAlign: 'center', padding: '40px', color: 'var(--disney-gold)', fontSize: '1rem' }}>
+                      ⚡ Reading persistent text log from Linux disk...
+                    </div>
+                  ) : activeRide ? (
+                    <>
+                      {/* Top Ride Card & File Header */}
                       <div
-                        key={idx}
                         style={{
-                          background: 'rgba(0, 0, 0, 0.45)',
-                          border: '1px solid rgba(255, 255, 255, 0.15)',
-                          borderLeft: '4px solid #00ff00',
-                          borderRadius: '6px',
-                          padding: '8px 12px',
+                          background: 'rgba(0, 20, 60, 0.85)',
+                          border: '1px solid var(--disney-gold)',
+                          borderRadius: '8px',
+                          padding: '10px 14px',
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
                           flexWrap: 'wrap',
-                          gap: '6px',
+                          gap: '8px',
                         }}
                       >
                         <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#00ff00' }}>
-                              ✓ RECOVERED
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white' }}>
+                              {activeRide.ride}
                             </span>
-                            <span style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold' }}>
-                              📅 {inc.date}
+                            <span style={{ fontSize: '0.68rem', background: 'rgba(0, 30, 90, 0.85)', color: 'var(--disney-gold)', border: '1px solid var(--disney-gold)', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                              {activeRide.park}
                             </span>
                           </div>
-                          <div style={{ fontSize: '0.72rem', color: '#ccc', marginTop: '2px' }}>
-                            Down: <b style={{ color: '#ff7777' }}>{inc.downTimeStr || 'Recorded'}</b> ➔ Restored: <b style={{ color: '#88ff88' }}>{inc.upTimeStr || 'Recorded'}</b>
+                          <div style={{ fontSize: '0.72rem', color: '#00ff00', marginTop: '2px' }}>
+                            <code>{liveLogData?.filePath || liveLogData?.stats?.logFilePath || `logs/rides/${liveLogData?.fileName || 'ride.txt'}`}</code>
                           </div>
                         </div>
 
-                        <div style={{ textAlign: 'right' }}>
-                          <span style={{ background: 'rgba(255, 204, 0, 0.2)', color: 'var(--disney-gold)', border: '1px solid var(--disney-gold)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.74rem', fontWeight: 'bold' }}>
-                            ⏱ {inc.durationMinutes} mins down
-                          </span>
-                          {inc.waitAtReopen !== undefined && (
-                            <div style={{ fontSize: '0.68rem', color: '#aaa', marginTop: '2px' }}>
-                              Reopened wait: {inc.waitAtReopen}m
-                            </div>
-                          )}
+                        {/* File Action Buttons */}
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <button
+                            onClick={() => fetchSelectedRideLog(activeRide.park, activeRide.ride)}
+                            style={{
+                              background: 'rgba(0, 30, 90, 0.8)',
+                              color: 'var(--disney-gold)',
+                              border: '1px solid var(--disney-gold)',
+                              borderRadius: '5px',
+                              padding: '4px 8px',
+                              fontSize: '0.72rem',
+                              fontWeight: 'bold',
+                              cursor: 'pointer',
+                              fontFamily: 'inherit',
+                            }}
+                            title="Fetch latest lines from server"
+                          >
+                            🔄 REFRESH
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (liveLogData?.rawContent) {
+                                navigator.clipboard.writeText(liveLogData.rawContent);
+                                setLiveLogCopied(true);
+                                setTimeout(() => setLiveLogCopied(false), 2000);
+                              }
+                            }}
+                            style={{
+                              background: liveLogCopied ? '#00ff00' : 'rgba(255, 204, 0, 0.15)',
+                              color: liveLogCopied ? '#002200' : 'var(--disney-gold)',
+                              border: '1px solid var(--disney-gold)',
+                              borderRadius: '5px',
+                              padding: '4px 8px',
+                              fontSize: '0.72rem',
+                              fontWeight: 'bold',
+                              cursor: 'pointer',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            {liveLogCopied ? '✓ COPIED!' : '📋 COPY LOG'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (liveLogData?.rawContent) {
+                                const blob = new Blob([liveLogData.rawContent], { type: 'text/plain;charset=utf-8' });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = liveLogData.fileName || `${activeRide.ride.replace(/\s+/g, '_')}_log.txt`;
+                                a.click();
+                                URL.revokeObjectURL(url);
+                              }
+                            }}
+                            style={{
+                              background: 'rgba(0, 255, 255, 0.15)',
+                              color: '#00ffff',
+                              border: '1px solid #00ffff',
+                              borderRadius: '5px',
+                              padding: '4px 8px',
+                              fontSize: '0.72rem',
+                              fontWeight: 'bold',
+                              cursor: 'pointer',
+                              fontFamily: 'inherit',
+                            }}
+                            title="Download .txt log file to device"
+                          >
+                            ⬇️ DOWNLOAD
+                          </button>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ padding: '12px', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '6px', fontSize: '0.78rem', color: '#aaa', textAlign: 'center' }}>
-                    ✨ No breakdown incidents recorded yet in this ride's file. The audit logger will write entries immediately when downtime occurs.
-                  </div>
-                )}
-              </div>
 
-              {/* Raw Text Log File Viewer */}
-              <div style={{ background: 'rgba(0, 0, 0, 0.65)', border: '1px solid #444', borderRadius: '10px', padding: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <b style={{ color: '#fff', fontSize: '0.8rem', fontFamily: 'monospace' }}>
-                    📁 RAW FILE CONTENT: {auditLogData?.fileName || 'log.txt'}
-                  </b>
-                  <span style={{ fontSize: '0.7rem', color: '#00ff00' }}>● Synchronized with Linux filesystem</span>
+                      {/* Stat Metrics Grid */}
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+                          gap: '8px',
+                        }}
+                      >
+                        <div className="stat-card" style={{ padding: '8px' }}>
+                          <div style={{ fontSize: '0.64rem', color: '#ccc' }}>RELIABILITY</div>
+                          <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#00ff00', marginTop: '1px' }}>
+                            {liveLogData?.stats?.reliabilityScore || 95}%
+                          </div>
+                          <div style={{ fontSize: '0.58rem', color: '#aaa' }}>Uptime score</div>
+                        </div>
+
+                        <div className="stat-card" style={{ padding: '8px' }}>
+                          <div style={{ fontSize: '0.64rem', color: '#ccc' }}>TOTAL OUTAGES</div>
+                          <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--disney-gold)', marginTop: '1px' }}>
+                            {liveLogData?.stats?.allTimeTotalIncidents || 0}
+                          </div>
+                          <div style={{ fontSize: '0.58rem', color: '#aaa' }}>In file log</div>
+                        </div>
+
+                        <div className="stat-card" style={{ padding: '8px' }}>
+                          <div style={{ fontSize: '0.64rem', color: '#ccc' }}>AVG RECOVERY</div>
+                          <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#66ccff', marginTop: '1px' }}>
+                            {liveLogData?.stats?.allTimeAvgDuration ? `~${liveLogData.stats.allTimeAvgDuration}m` : '--'}
+                          </div>
+                          <div style={{ fontSize: '0.58rem', color: '#aaa' }}>Median: ~{liveLogData?.stats?.allTimeMedianDuration || '--'}m</div>
+                        </div>
+
+                        <div className="stat-card" style={{ padding: '8px' }}>
+                          <div style={{ fontSize: '0.64rem', color: '#ccc' }}>TODAY'S OUTAGES</div>
+                          <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: (liveLogData?.stats?.todayTotalIncidents || 0) > 0 ? 'var(--downtime-red)' : '#00ff00', marginTop: '1px' }}>
+                            {liveLogData?.stats?.todayTotalIncidents || 0}
+                          </div>
+                          <div style={{ fontSize: '0.58rem', color: '#aaa' }}>
+                            {liveLogData?.stats?.todayAvgDuration ? `Avg ${liveLogData.stats.todayAvgDuration}m` : '0 today'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Recorded Breakdown Incidents */}
+                      <div style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 204, 0, 0.25)', borderRadius: '8px', padding: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <b style={{ color: 'var(--disney-gold)', fontSize: '0.82rem' }}>
+                            📜 RECOVERY AUDIT TIMELINE (PARSED EVENTS):
+                          </b>
+                          <span style={{ fontSize: '0.68rem', color: '#aaa' }}>
+                            Feeds ML Uptime Algorithm
+                          </span>
+                        </div>
+
+                        {liveLogData?.stats?.allTimeIncidents?.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '140px', overflowY: 'auto' }}>
+                            {liveLogData.stats.allTimeIncidents.map((inc: any, idx: number) => (
+                              <div
+                                key={idx}
+                                style={{
+                                  background: 'rgba(0, 0, 0, 0.5)',
+                                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                                  borderLeft: '4px solid #00ff00',
+                                  borderRadius: '5px',
+                                  padding: '6px 10px',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  flexWrap: 'wrap',
+                                  gap: '4px',
+                                }}
+                              >
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#00ff00' }}>✓ RESTORED</span>
+                                    <span style={{ fontSize: '0.7rem', color: '#fff', fontWeight: 'bold' }}>📅 {inc.date}</span>
+                                  </div>
+                                  <div style={{ fontSize: '0.68rem', color: '#ccc', marginTop: '1px' }}>
+                                    Down: <b style={{ color: '#ff7777' }}>{inc.downTimeStr || 'Recorded'}</b> ➔ Restored: <b style={{ color: '#88ff88' }}>{inc.upTimeStr || 'Recorded'}</b>
+                                  </div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                  <span style={{ background: 'rgba(255, 204, 0, 0.2)', color: 'var(--disney-gold)', border: '1px solid var(--disney-gold)', padding: '1px 6px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                                    ⏱ {inc.durationMinutes} mins down
+                                  </span>
+                                  {inc.waitAtReopen !== undefined && (
+                                    <div style={{ fontSize: '0.62rem', color: '#aaa' }}>Reopened wait: {inc.waitAtReopen}m</div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ padding: '8px', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '5px', fontSize: '0.72rem', color: '#aaa', textAlign: 'center' }}>
+                            ✨ No downtime outages recorded yet in this file. The system will write entries automatically when the attraction breaks down.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Raw Text Log File Terminal Viewer */}
+                      <div style={{ background: '#0a0d14', border: '1px solid #30363d', borderRadius: '8px', padding: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <span style={{ color: '#58a6ff', fontSize: '0.74rem', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                            📄 {liveLogData?.fileName || 'log.txt'} ({liveLogData?.stats?.fileSizeBytes ? `${liveLogData.stats.fileSizeBytes} bytes` : 'Disk File'})
+                          </span>
+                          <span style={{ fontSize: '0.66rem', color: '#00ff00', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span>●</span> Linux File Stream Active
+                          </span>
+                        </div>
+                        <pre
+                          style={{
+                            background: '#04070d',
+                            color: '#7ee787',
+                            padding: '10px',
+                            borderRadius: '5px',
+                            fontSize: '0.7rem',
+                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                            maxHeight: '160px',
+                            overflowY: 'auto',
+                            whiteSpace: 'pre-wrap',
+                            lineHeight: '1.4',
+                            border: '1px solid #21262d',
+                            margin: 0,
+                          }}
+                        >
+                          {liveLogData?.rawContent || '# Initializing log stream...'}
+                        </pre>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
-                <pre
-                  style={{
-                    background: '#0d1117',
-                    color: '#c9d1d9',
-                    padding: '12px',
-                    borderRadius: '6px',
-                    fontSize: '0.72rem',
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                    maxHeight: '180px',
-                    overflowY: 'auto',
-                    whiteSpace: 'pre-wrap',
-                    lineHeight: '1.4',
-                    border: '1px solid #30363d',
-                  }}
-                >
-                  {auditLogData?.rawContent || '# Initializing log...'}
-                </pre>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       )}
     </>
